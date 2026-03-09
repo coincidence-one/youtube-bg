@@ -1,17 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Music, Play, Pause, Search, X, ListPlus, ListX } from "lucide-react";
+import { Music, Play, Pause, Search, X, ListPlus } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { getThumbnailUrl } from "@/lib/youtube";
+import { getThumbnailUrl, formatTime } from "@/lib/youtube";
 import { PlaylistSkeleton } from "./PlaylistSkeleton";
+import type { TrackMeta } from "@/lib/youtube";
 
 interface PlaylistViewProps {
   playlist: string[];
   currentIndex: number;
   isPlaying: boolean;
   isLoading: boolean;
-  trackTitles: Record<string, string>;
+  trackMeta: Record<string, TrackMeta>;
   queue: number[];
   onPlayAt: (index: number) => void;
   onAddToQueue: (index: number) => void;
@@ -22,7 +23,7 @@ export function PlaylistView({
   currentIndex,
   isPlaying,
   isLoading,
-  trackTitles,
+  trackMeta,
   queue,
   onPlayAt,
   onAddToQueue,
@@ -50,10 +51,10 @@ export function PlaylistView({
     return playlist
       .map((videoId, index) => ({ videoId, index }))
       .filter(({ videoId, index }) => {
-        const title = trackTitles[videoId] || `Track ${index + 1}`;
+        const title = trackMeta[videoId]?.title || `Track ${index + 1}`;
         return title.toLowerCase().includes(query);
       });
-  }, [search, playlist, trackTitles]);
+  }, [search, playlist, trackMeta]);
 
   if (isLoading && playlist.length === 0) {
     return <PlaylistSkeleton />;
@@ -72,7 +73,9 @@ export function PlaylistView({
   const renderTrack = (videoId: string, index: number) => {
     const isCurrent = index === currentIndex;
     const isQueued = queueSet.has(index);
-    const title = trackTitles[videoId];
+    const meta = trackMeta[videoId];
+    const title = meta?.title;
+    const duration = meta?.duration;
     return (
       <div
         key={`${videoId}-${index}`}
@@ -107,6 +110,9 @@ export function PlaylistView({
             </p>
             <p className="text-xs text-muted-foreground">
               {index + 1}
+              {duration && duration > 0 && (
+                <span className="ml-1.5 opacity-70">{formatTime(duration)}</span>
+              )}
               {isQueued && (
                 <span className="ml-1.5 text-primary text-[10px]">• 큐</span>
               )}

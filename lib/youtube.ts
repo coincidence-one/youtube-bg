@@ -1,3 +1,8 @@
+import {
+  fetchFullPlaylistMeta,
+  extractVideoIdFromPipedUrl,
+} from "./piped";
+
 /**
  * YouTube URL에서 재생목록 ID를 추출합니다.
  * 지원 형식:
@@ -30,11 +35,56 @@ export function getThumbnailUrl(
   return `https://img.youtube.com/vi/${videoId}/${quality}.jpg`;
 }
 
+// ─── 트랙 메타데이터 ───
+
+export interface TrackMeta {
+  title: string;
+  duration?: number;
+  uploader?: string;
+}
+
 /**
- * YouTube noembed API로 비디오 제목을 가져옵니다.
- * (oEmbed 래퍼, CORS 허용)
+ * Piped API로 재생목록의 모든 곡 메타데이터를 가져옵니다.
+ * 실패 시 noembed.com 폴백
  */
-export async function fetchVideoTitle(videoId: string): Promise<string | null> {
+export async function fetchAllTrackMeta(
+  playlistId: string,
+  videoIds: string[],
+  existingMeta: Record<string, TrackMeta>,
+  onBatchComplete: (meta: Record<string, TrackMeta>) => void,
+): Promise<void> {
+  // 1차: Piped API — 한번에 전체 가져오기
+  try {
+    const playlist = await fetchFullPlaylistMeta(playlistId);
+    if (playlist && playlist.videos.length > 0) {
+      const meta: Record<string, TrackMeta> = {};
+      for (const v of playlist.videos) {
+        const vid = extractVideoIdFromPipedUrl(v.url);
+        if (vid && !existingMeta[vid]) {
+          meta[vid] = {
+            title: v.title,
+            duration: v.duration > 0 ? v.duration : undefined,
+            uploader: v.uploaderName || undefined,
+          };
+        }
+      }
+      if (Object.keys(meta).length > 0) {
+        onBatchComplete(meta);
+      }
+      return; // 성공 시 폴백 불필요
+    }
+  } catch {
+    // Piped 실패 → 폴백
+  }
+
+  // 2차: noembed.com 폴백 (기존 로직)
+  await fetchAllVideoTitlesFallback(videoIds, existingMeta, onBatchComplete);
+}
+
+/**
+ * noembed.com으로 비디오 제목을 가져옵니다. (폴백용)
+ */
+async function fetchVideoTitleFallback(videoId: string): Promise<string | null> {
   try {
     const res = await fetch(
       `https://noembed.com/embed?url=https://www.youtube.com/watch?v=${videoId}`
@@ -48,38 +98,38 @@ export async function fetchVideoTitle(videoId: string): Promise<string | null> {
 }
 
 /**
- * 여러 비디오의 제목을 병렬로 가져옵니다.
- * 이미 캐시된 것은 건너뜁니다.
- * rate limit 방지를 위해 배치 크기를 제한합니다.
+ * noembed.com으로 여러 비디오 제목을 배치로 가져옵니다. (폴백용)
  */
-export async function fetchAllVideoTitles(
+async function fetchAllVideoTitlesFallback(
   videoIds: string[],
-  existingTitles: Record<string, string>,
-  onBatchComplete: (titles: Record<string, string>) => void,
+  existingMeta: Record<string, TrackMeta>,
+  onBatchComplete: (meta: Record<string, TrackMeta>) => void,
   batchSize = 5,
 ): Promise<void> {
-  const uncached = videoIds.filter((id) => !existingTitles[id]);
+  const uncached = videoIds.filter((id) => !existingMeta[id]);
   if (uncached.length === 0) return;
 
   for (let i = 0; i < uncached.length; i += batchSize) {
     const batch = uncached.slice(i, i + batchSize);
     const results = await Promise.all(
       batch.map(async (id) => {
-        const title = await fetchVideoTitle(id);
+        const title = await fetchVideoTitleFallback(id);
         return [id, title] as const;
       })
     );
 
-    const newTitles: Record<string, string> = {};
+    const newMeta: Record<string, TrackMeta> = {};
     for (const [id, title] of results) {
-      if (title) newTitles[id] = title;
+      if (title) newMeta[id] = { title };
     }
 
-    if (Object.keys(newTitles).length > 0) {
-      onBatchComplete(newTitles);
+    if (Object.keys(newMeta).length > 0) {
+      onBatchComplete(newMeta);
     }
   }
 }
+
+// ─── 유틸리티 ───
 
 /**
  * 초를 mm:ss 형식으로 변환합니다.

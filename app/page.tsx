@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Headphones, Shuffle, Repeat, Repeat1, Mic2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Headphones, Shuffle, Repeat, Repeat1, Mic2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -19,13 +19,21 @@ import { ViewModeToggle } from "@/components/ViewModeToggle";
 import { FavoritePlaylists } from "@/components/FavoritePlaylists";
 import { LyricsView } from "@/components/LyricsView";
 import { PiPButton } from "@/components/PiPButton";
+import { SearchView } from "@/components/SearchView";
+import { SponsorBlockToggle } from "@/components/SponsorBlockToggle";
+import { SponsorSkipNotification } from "@/components/SponsorSkipNotification";
 import { useYouTubePlayer } from "@/hooks/useYouTubePlayer";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useSleepTimer } from "@/hooks/useSleepTimer";
+import { useSponsorBlock } from "@/hooks/useSponsorBlock";
+import { useVideoVotes } from "@/hooks/useVideoVotes";
 
 const PLAYER_ID = "yt-player";
 
 export default function Home() {
+  // SponsorBlock 진행률 콜백 ref
+  const onProgressRef = useRef<((time: number) => void) | null>(null);
+
   const {
     state,
     loadPlaylist,
@@ -44,10 +52,11 @@ export default function Home() {
     addToQueue,
     removeFromQueue,
     clearQueue,
-  } = useYouTubePlayer(PLAYER_ID);
+  } = useYouTubePlayer(PLAYER_ID, onProgressRef);
 
   const [playlistLoaded, setPlaylistLoaded] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
 
   // localStorage에서 마지막 재생목록 자동 복원
   useEffect(() => {
@@ -61,10 +70,27 @@ export default function Home() {
   const handleLoadPlaylist = (playlistId: string) => {
     loadPlaylist(playlistId);
     setPlaylistLoaded(true);
+    setShowSearch(false);
   };
 
   // 슬립 타이머
   const { timerState, setTimer } = useSleepTimer(pause);
+
+  // SponsorBlock
+  const sponsorBlock = useSponsorBlock(state.currentTrack?.videoId ?? null);
+
+  // SponsorBlock 자동 스킵 콜백
+  useEffect(() => {
+    onProgressRef.current = (currentTime: number) => {
+      const skipTo = sponsorBlock.checkSegment(currentTime);
+      if (skipTo !== null) {
+        seekTo(skipTo);
+      }
+    };
+  }, [sponsorBlock.checkSegment, seekTo]);
+
+  // Return YouTube Dislike
+  const votes = useVideoVotes(state.currentTrack?.videoId ?? null);
 
   // 키보드 단축키
   const handleVolumeUp = useCallback(() => {
@@ -87,6 +113,15 @@ export default function Home() {
     setShowLyrics((prev) => !prev);
   }, []);
 
+  const handleToggleSearch = useCallback(() => {
+    setShowSearch((prev) => !prev);
+  }, []);
+
+  const handleToggleSponsorBlock = useCallback(() => {
+    sponsorBlock.toggleEnabled();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sponsorBlock.toggleEnabled]);
+
   useKeyboardShortcuts({
     onTogglePlay: togglePlay,
     onNext: next,
@@ -98,6 +133,8 @@ export default function Home() {
     onSeekBackward: handleSeekBackward,
     onToggleVideoMode: toggleVideoMode,
     onToggleLyrics: handleToggleLyrics,
+    onToggleSearch: handleToggleSearch,
+    onToggleSponsorBlock: handleToggleSponsorBlock,
     hasTrack: state.currentTrack !== null,
   });
 
@@ -115,10 +152,24 @@ export default function Home() {
           <div className="flex items-center gap-1">
             {playlistLoaded && (
               <>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={`size-8 ${showSearch ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                  onClick={handleToggleSearch}
+                  title="검색 (S)"
+                >
+                  <Search className="size-4" />
+                </Button>
                 <FavoritePlaylists
                   currentPlaylistId={state.playlistId}
                   playlist={state.playlist}
                   onLoadPlaylist={handleLoadPlaylist}
+                />
+                <SponsorBlockToggle
+                  enabled={sponsorBlock.enabled}
+                  segmentCount={sponsorBlock.segments.length}
+                  onToggle={sponsorBlock.toggleEnabled}
                 />
                 <PiPButton
                   track={state.currentTrack}
@@ -158,6 +209,9 @@ export default function Home() {
             </div>
             <PlaylistInput onLoadPlaylist={handleLoadPlaylist} isLoading={state.isLoading} />
           </div>
+        ) : showSearch ? (
+          /* 검색 화면 */
+          <SearchView onLoadPlaylist={handleLoadPlaylist} onClose={() => setShowSearch(false)} />
         ) : (
           /* 재생 화면 */
           <div className="space-y-6">
@@ -187,6 +241,7 @@ export default function Home() {
                       currentTime={state.currentTime}
                       duration={state.duration}
                       onSeek={seekTo}
+                      segments={sponsorBlock.enabled ? sponsorBlock.segments : undefined}
                     />
 
                     {/* 모바일 전용 추가 컨트롤 */}
@@ -276,6 +331,7 @@ export default function Home() {
                       currentTime={state.currentTime}
                       duration={state.duration}
                       onSeek={seekTo}
+                      segments={sponsorBlock.enabled ? sponsorBlock.segments : undefined}
                     />
 
                     {/* 컨트롤 */}
@@ -306,7 +362,7 @@ export default function Home() {
                 </Card>
               )}
 
-              {/* 가사 패널 (데스크탑) — col 1만 차지 */}
+              {/* 가사 패널 (데스크탑) */}
               {showLyrics && state.currentTrack && (
                 <Card className="hidden md:block">
                   <CardContent className="p-4">
@@ -337,7 +393,7 @@ export default function Home() {
                       currentIndex={state.currentIndex}
                       isPlaying={state.isPlaying}
                       isLoading={state.isLoading}
-                      trackTitles={state.trackTitles}
+                      trackMeta={state.trackMeta}
                       queue={state.queue}
                       onPlayAt={playAt}
                       onAddToQueue={addToQueue}
@@ -350,10 +406,18 @@ export default function Home() {
         )}
       </main>
 
+      {/* SponsorBlock 스킵 알림 */}
+      <SponsorSkipNotification
+        category={sponsorBlock.lastSkippedCategory}
+        onDismiss={sponsorBlock.clearNotification}
+      />
+
       {/* 하단 고정 플레이어 바 */}
       {playlistLoaded && (
         <PlayerBar
           state={state}
+          votes={votes}
+          segments={sponsorBlock.enabled ? sponsorBlock.segments : undefined}
           onTogglePlay={togglePlay}
           onNext={next}
           onPrevious={previous}

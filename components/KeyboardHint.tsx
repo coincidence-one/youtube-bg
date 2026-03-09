@@ -15,6 +15,8 @@ const SHORTCUTS = [
   { keys: "M", desc: "음소거 토글" },
   { keys: "V", desc: "영상/노래 모드 전환" },
   { keys: "L", desc: "가사 표시 토글" },
+  { keys: "S", desc: "검색 토글" },
+  { keys: "B", desc: "SponsorBlock 토글" },
 ];
 
 export function KeyboardHint() {

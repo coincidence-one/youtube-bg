@@ -4,11 +4,14 @@ import { TrackInfo } from "./TrackInfo";
 import { PlayerControls } from "./PlayerControls";
 import { ProgressBar } from "./ProgressBar";
 import { VolumeControl } from "./VolumeControl";
-import type { PlayerState, RepeatMode } from "@/hooks/useYouTubePlayer";
-import type { TrackInfo as TrackInfoType } from "@/hooks/useYouTubePlayer";
+import type { PlayerState } from "@/hooks/useYouTubePlayer";
+import type { VideoVotes } from "@/lib/ryd";
+import type { SponsorSegment } from "@/lib/sponsorblock";
 
 interface PlayerBarProps {
   state: PlayerState;
+  votes?: VideoVotes | null;
+  segments?: SponsorSegment[];
   onTogglePlay: () => void;
   onNext: () => void;
   onPrevious: () => void;
@@ -21,6 +24,8 @@ interface PlayerBarProps {
 
 export function PlayerBar({
   state,
+  votes,
+  segments,
   onTogglePlay,
   onNext,
   onPrevious,
@@ -49,7 +54,7 @@ export function PlayerBar({
       <div className="mx-auto max-w-screen-2xl px-4 py-2 md:py-3">
         {/* 데스크탑/태블릿 레이아웃 */}
         <div className="hidden md:grid md:grid-cols-[1fr_2fr_1fr] items-center gap-4">
-          <TrackInfo track={state.currentTrack} />
+          <TrackInfo track={state.currentTrack} votes={votes} />
 
           <div className="flex flex-col items-center gap-1">
             <PlayerControls
@@ -68,6 +73,7 @@ export function PlayerBar({
               duration={state.duration}
               onSeek={onSeek}
               className="max-w-md"
+              segments={segments}
             />
           </div>
 
@@ -83,7 +89,7 @@ export function PlayerBar({
 
         {/* 모바일 레이아웃 */}
         <div className="flex md:hidden items-center gap-3">
-          <TrackInfo track={state.currentTrack} className="flex-1 min-w-0" />
+          <TrackInfo track={state.currentTrack} votes={votes} className="flex-1 min-w-0" />
           <PlayerControls
             isPlaying={state.isPlaying}
             shuffle={state.shuffle}

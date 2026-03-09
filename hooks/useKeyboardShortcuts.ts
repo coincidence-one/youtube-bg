@@ -13,6 +13,8 @@ interface ShortcutHandlers {
   onSeekBackward: () => void;
   onToggleVideoMode: () => void;
   onToggleLyrics: () => void;
+  onToggleSearch: () => void;
+  onToggleSponsorBlock: () => void;
   hasTrack: boolean;
 }
 
@@ -27,6 +29,8 @@ export function useKeyboardShortcuts({
   onSeekBackward,
   onToggleVideoMode,
   onToggleLyrics,
+  onToggleSearch,
+  onToggleSponsorBlock,
   hasTrack,
 }: ShortcutHandlers) {
   useEffect(() => {
@@ -76,6 +80,14 @@ export function useKeyboardShortcuts({
         case "L":
           onToggleLyrics();
           break;
+        case "s":
+        case "S":
+          onToggleSearch();
+          break;
+        case "b":
+        case "B":
+          onToggleSponsorBlock();
+          break;
       }
     };
 
@@ -92,6 +104,8 @@ export function useKeyboardShortcuts({
     onSeekBackward,
     onToggleVideoMode,
     onToggleLyrics,
+    onToggleSearch,
+    onToggleSponsorBlock,
     hasTrack,
   ]);
 }

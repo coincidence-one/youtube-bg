@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getThumbnailUrl, fetchAllVideoTitles } from "@/lib/youtube";
+import { getThumbnailUrl, fetchAllTrackMeta, type TrackMeta } from "@/lib/youtube";
 
 export type RepeatMode = "off" | "all" | "one";
 
@@ -26,8 +26,8 @@ export interface PlayerState {
   shuffle: boolean;
   repeat: RepeatMode;
   playbackRate: number;
-  /** videoId -> title 매핑 (재생된 곡들의 제목 캐시) */
-  trackTitles: Record<string, string>;
+  /** videoId -> 메타데이터 매핑 (제목, 길이, 업로더) */
+  trackMeta: Record<string, TrackMeta>;
   /** 현재 로드된 재생목록 ID */
   playlistId: string | null;
   /** 영상/노래 모드 (true=영상, false=노래) */
@@ -42,7 +42,9 @@ interface SavedState {
   playlistId: string | null;
   volume: number;
   playbackRate: number;
-  trackTitles: Record<string, string>;
+  trackMeta: Record<string, TrackMeta>;
+  // 하위 호환: 이전 trackTitles도 읽기
+  trackTitles?: Record<string, string>;
   videoMode: boolean;
 }
 
@@ -57,7 +59,23 @@ function loadSavedState(): Partial<SavedState> {
   return {};
 }
 
-function saveState(data: SavedState) {
+function migrateTitlesToMeta(saved: Partial<SavedState>): Record<string, TrackMeta> {
+  // trackMeta가 있으면 사용
+  if (saved.trackMeta && Object.keys(saved.trackMeta).length > 0) {
+    return saved.trackMeta;
+  }
+  // 이전 trackTitles에서 마이그레이션
+  if (saved.trackTitles) {
+    const meta: Record<string, TrackMeta> = {};
+    for (const [id, title] of Object.entries(saved.trackTitles)) {
+      meta[id] = { title };
+    }
+    return meta;
+  }
+  return {};
+}
+
+function saveState(data: Omit<SavedState, "trackTitles">) {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
@@ -80,13 +98,16 @@ const INITIAL_STATE: PlayerState = {
   shuffle: false,
   repeat: "off",
   playbackRate: 1,
-  trackTitles: {},
+  trackMeta: {},
   playlistId: null,
   videoMode: false,
   queue: [],
 };
 
-export function useYouTubePlayer(containerId: string) {
+export function useYouTubePlayer(
+  containerId: string,
+  onProgressRef?: React.RefObject<((time: number) => void) | null>,
+) {
   const playerRef = useRef<YT.Player | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -97,7 +118,7 @@ export function useYouTubePlayer(containerId: string) {
       ...INITIAL_STATE,
       volume: saved.volume ?? INITIAL_STATE.volume,
       playbackRate: saved.playbackRate ?? INITIAL_STATE.playbackRate,
-      trackTitles: saved.trackTitles ?? {},
+      trackMeta: migrateTitlesToMeta(saved),
       playlistId: saved.playlistId ?? null,
       videoMode: saved.videoMode ?? INITIAL_STATE.videoMode,
     };
@@ -109,29 +130,30 @@ export function useYouTubePlayer(containerId: string) {
       playlistId: state.playlistId,
       volume: state.volume,
       playbackRate: state.playbackRate,
-      trackTitles: state.trackTitles,
+      trackMeta: state.trackMeta,
       videoMode: state.videoMode,
     });
-  }, [state.playlistId, state.volume, state.playbackRate, state.trackTitles, state.videoMode]);
+  }, [state.playlistId, state.volume, state.playbackRate, state.trackMeta, state.videoMode]);
 
-  // 재생목록 로드 시 모든 곡 제목 일괄 가져오기
-  const titleFetchRef = useRef<string>("");
+  // 재생목록 로드 시 모든 곡 메타데이터 일괄 가져오기 (Piped → noembed 폴백)
+  const metaFetchRef = useRef<string>("");
   useEffect(() => {
-    if (state.playlist.length === 0) return;
+    if (state.playlist.length === 0 || !state.playlistId) return;
     // 동일 재생목록 재요청 방지
     const key = state.playlist.join(",");
-    if (titleFetchRef.current === key) return;
-    titleFetchRef.current = key;
+    if (metaFetchRef.current === key) return;
+    metaFetchRef.current = key;
 
     let cancelled = false;
-    fetchAllVideoTitles(
+    fetchAllTrackMeta(
+      state.playlistId,
       state.playlist,
-      state.trackTitles,
-      (newTitles) => {
+      state.trackMeta,
+      (newMeta) => {
         if (cancelled) return;
         setState((prev) => ({
           ...prev,
-          trackTitles: { ...prev.trackTitles, ...newTitles },
+          trackMeta: { ...prev.trackMeta, ...newMeta },
         }));
       }
     );
@@ -154,7 +176,7 @@ export function useYouTubePlayer(containerId: string) {
     document.head.appendChild(script);
   }, []);
 
-  // 진행률 업데이트 인터벌
+  // 진행률 업데이트 인터벌 + SponsorBlock 콜백
   const startProgressInterval = useCallback(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
     intervalRef.current = setInterval(() => {
@@ -164,10 +186,13 @@ export function useYouTubePlayer(containerId: string) {
         const currentTime = player.getCurrentTime() || 0;
         const duration = player.getDuration() || 0;
         setState((prev) => ({ ...prev, currentTime, duration }));
+        // SponsorBlock 등 외부 콜백 호출
+        onProgressRef?.current?.(currentTime);
       } catch {
         // Player not ready
       }
     }, 500);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const stopProgressInterval = useCallback(() => {
@@ -177,7 +202,7 @@ export function useYouTubePlayer(containerId: string) {
     }
   }, []);
 
-  // 현재 트랙 정보 업데이트 + 제목 캐싱
+  // 현재 트랙 정보 업데이트 + 메타 캐싱
   const updateTrackInfo = useCallback(() => {
     const player = playerRef.current;
     if (!player) return;
@@ -198,10 +223,12 @@ export function useYouTubePlayer(containerId: string) {
           currentTrack: track,
           playlist,
           currentIndex,
-          // 재생된 곡의 제목을 캐시에 저장
-          trackTitles: {
-            ...prev.trackTitles,
-            [data.video_id]: data.title || "Unknown",
+          trackMeta: {
+            ...prev.trackMeta,
+            [data.video_id]: {
+              ...prev.trackMeta[data.video_id],
+              title: data.title || "Unknown",
+            },
           },
         }));
 
