@@ -496,6 +496,77 @@ export function useYouTubePlayer(
     setState((prev) => ({ ...prev, queue: [] }));
   }, []);
 
+  // 외부 검색 결과에서 트랙 추가
+  const addExternalTrack = useCallback(
+    (
+      videoId: string,
+      meta: { title: string; duration?: number; uploader?: string },
+      playNow?: boolean
+    ) => {
+      setState((prev) => {
+        // 이미 재생목록에 있으면 해당 인덱스 사용
+        const existingIndex = prev.playlist.indexOf(videoId);
+        if (existingIndex !== -1) {
+          if (playNow) {
+            // 바로 재생
+            const player = playerRef.current;
+            if (player) {
+              player.loadVideoById(videoId);
+            }
+            return {
+              ...prev,
+              currentIndex: existingIndex,
+              currentTrack: {
+                videoId,
+                title: prev.trackMeta[videoId]?.title ?? meta.title,
+                author: prev.trackMeta[videoId]?.uploader ?? meta.uploader ?? "",
+                thumbnail: getThumbnailUrl(videoId),
+              },
+            };
+          }
+          // 큐에 추가
+          return { ...prev, queue: [...prev.queue, existingIndex] };
+        }
+
+        // 새 곡 — 재생목록 끝에 추가
+        const newPlaylist = [...prev.playlist, videoId];
+        const newIndex = newPlaylist.length - 1;
+        const newMeta = {
+          ...prev.trackMeta,
+          [videoId]: { title: meta.title, duration: meta.duration, uploader: meta.uploader },
+        };
+
+        if (playNow) {
+          const player = playerRef.current;
+          if (player) {
+            player.loadVideoById(videoId);
+          }
+          return {
+            ...prev,
+            playlist: newPlaylist,
+            trackMeta: newMeta,
+            currentIndex: newIndex,
+            currentTrack: {
+              videoId,
+              title: meta.title,
+              author: meta.uploader ?? "",
+              thumbnail: getThumbnailUrl(videoId),
+            },
+          };
+        }
+
+        // 큐에 추가
+        return {
+          ...prev,
+          playlist: newPlaylist,
+          trackMeta: newMeta,
+          queue: [...prev.queue, newIndex],
+        };
+      });
+    },
+    []
+  );
+
   // 재생 속도
   const setPlaybackRate = useCallback((rate: number) => {
     const player = playerRef.current;
@@ -524,5 +595,6 @@ export function useYouTubePlayer(
     addToQueue,
     removeFromQueue,
     clearQueue,
+    addExternalTrack,
   };
 }

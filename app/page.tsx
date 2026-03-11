@@ -52,6 +52,7 @@ export default function Home() {
     addToQueue,
     removeFromQueue,
     clearQueue,
+    addExternalTrack,
   } = useYouTubePlayer(PLAYER_ID, onProgressRef);
 
   const [playlistLoaded, setPlaylistLoaded] = useState(false);
@@ -72,6 +73,19 @@ export default function Home() {
     setPlaylistLoaded(true);
     setShowSearch(false);
   };
+
+  // 외부 트랙 추가 (검색에서)
+  const handleAddExternalTrack = useCallback(
+    (
+      videoId: string,
+      meta: { title: string; duration?: number; uploader?: string },
+      playNow?: boolean
+    ) => {
+      addExternalTrack(videoId, meta, playNow);
+      if (playNow) setPlaylistLoaded(true);
+    },
+    [addExternalTrack]
+  );
 
   // 슬립 타이머
   const { timerState, setTimer } = useSleepTimer(pause);
@@ -150,17 +164,17 @@ export default function Home() {
             <h1 className="font-semibold text-lg">YouTube BG</h1>
           </div>
           <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`size-8 ${showSearch ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+              onClick={handleToggleSearch}
+              title="검색 (S)"
+            >
+              <Search className="size-4" />
+            </Button>
             {playlistLoaded && (
               <>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={`size-8 ${showSearch ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
-                  onClick={handleToggleSearch}
-                  title="검색 (S)"
-                >
-                  <Search className="size-4" />
-                </Button>
                 <FavoritePlaylists
                   currentPlaylistId={state.playlistId}
                   playlist={state.playlist}
@@ -194,7 +208,10 @@ export default function Home() {
         {/* YouTube 플레이어 - 항상 DOM에 존재, videoMode일 때만 보임 */}
         <Player id={PLAYER_ID} videoMode={isVideoVisible} />
 
-        {!playlistLoaded ? (
+        {showSearch ? (
+          /* 검색 화면 */
+          <SearchView onLoadPlaylist={handleLoadPlaylist} onAddTrack={handleAddExternalTrack} onClose={() => setShowSearch(false)} />
+        ) : !playlistLoaded ? (
           /* 초기 화면: 재생목록 입력 */
           <div className="flex flex-col items-center justify-center min-h-[60vh] gap-8">
             <div className="text-center space-y-3">
@@ -209,9 +226,6 @@ export default function Home() {
             </div>
             <PlaylistInput onLoadPlaylist={handleLoadPlaylist} isLoading={state.isLoading} />
           </div>
-        ) : showSearch ? (
-          /* 검색 화면 */
-          <SearchView onLoadPlaylist={handleLoadPlaylist} onClose={() => setShowSearch(false)} />
         ) : (
           /* 재생 화면 */
           <div className="space-y-6">

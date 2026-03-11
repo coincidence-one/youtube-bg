@@ -4,16 +4,21 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Search, X, Loader2, ListMusic, Play, ListPlus } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
-import { searchVideos, fetchSuggestions, type PipedSearchResult } from "@/lib/piped";
+import { searchVideos, fetchSuggestions, extractVideoIdFromPipedUrl, type PipedSearchResult } from "@/lib/piped";
 import { formatTime, extractPlaylistId } from "@/lib/youtube";
 import { formatCount } from "@/lib/utils";
 
 interface SearchViewProps {
   onLoadPlaylist: (playlistId: string) => void;
+  onAddTrack: (
+    videoId: string,
+    meta: { title: string; duration?: number; uploader?: string },
+    playNow?: boolean
+  ) => void;
   onClose: () => void;
 }
 
-export function SearchView({ onLoadPlaylist, onClose }: SearchViewProps) {
+export function SearchView({ onLoadPlaylist, onAddTrack, onClose }: SearchViewProps) {
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [results, setResults] = useState<PipedSearchResult[]>([]);
@@ -77,17 +82,27 @@ export function SearchView({ onLoadPlaylist, onClose }: SearchViewProps) {
     handleSearch(s);
   };
 
-  const handleSelectResult = (result: PipedSearchResult) => {
+  const handleSelectResult = (result: PipedSearchResult, playNow?: boolean) => {
     if (result.type === "playlist") {
-      // /playlist?list=xxx 형식
       const match = result.url.match(/list=([^&]+)/);
       if (match) {
         onLoadPlaylist(match[1]);
         onClose();
       }
+    } else if (result.type === "stream") {
+      const videoId = extractVideoIdFromPipedUrl(result.url);
+      if (videoId) {
+        onAddTrack(
+          videoId,
+          { title: result.title, duration: result.duration, uploader: result.uploaderName },
+          playNow
+        );
+        if (playNow) onClose();
+      }
     }
-    // stream 타입은 현재 개별 비디오 재생 지원 안 함 → 향후 큐에 추가 가능
   };
+
+  const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
 
   return (
     <div className="space-y-4">
@@ -149,46 +164,76 @@ export function SearchView({ onLoadPlaylist, onClose }: SearchViewProps) {
       {!loading && results.length > 0 && (
         <ScrollArea className="h-[400px] lg:h-[500px]">
           <div className="space-y-1 p-1">
-            {results.map((result, i) => (
-              <button
-                key={`${result.url}-${i}`}
-                onClick={() => handleSelectResult(result)}
-                className="w-full flex items-center gap-3 p-2 rounded-md hover:bg-muted/50 text-left transition-colors"
-              >
-                {/* 썸네일 */}
-                <div className="relative shrink-0">
-                  <img
-                    src={result.thumbnail}
-                    alt=""
-                    className="w-24 h-14 rounded object-cover"
-                  />
-                  {result.type === "stream" && result.duration > 0 && (
-                    <span className="absolute bottom-0.5 right-0.5 bg-black/80 text-white text-[10px] px-1 rounded">
-                      {formatTime(result.duration)}
-                    </span>
-                  )}
-                  {result.type === "playlist" && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded">
-                      <ListMusic className="size-5 text-white" />
-                    </div>
-                  )}
-                </div>
-                {/* 정보 */}
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium truncate">{result.title}</p>
-                  <p className="text-xs text-muted-foreground truncate">{result.uploaderName}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {result.type === "playlist" ? (
-                      <span className="text-primary">{result.videos ?? 0}곡 재생목록</span>
-                    ) : (
-                      <>
-                        {result.views > 0 && `조회수 ${formatCount(result.views)}`}
-                      </>
+            {results.map((result, i) => {
+              const videoId = result.type === "stream" ? extractVideoIdFromPipedUrl(result.url) : null;
+              const isAdded = videoId ? addedIds.has(videoId) : false;
+
+              return (
+                <div
+                  key={`${result.url}-${i}`}
+                  className="w-full flex items-center gap-3 p-2 rounded-md hover:bg-muted/50 text-left transition-colors group"
+                >
+                  {/* 썸네일 */}
+                  <button
+                    onClick={() => handleSelectResult(result, true)}
+                    className="relative shrink-0"
+                  >
+                    <img
+                      src={result.thumbnail}
+                      alt=""
+                      className="w-24 h-14 rounded object-cover"
+                    />
+                    {result.type === "stream" && result.duration > 0 && (
+                      <span className="absolute bottom-0.5 right-0.5 bg-black/80 text-white text-[10px] px-1 rounded">
+                        {formatTime(result.duration)}
+                      </span>
                     )}
-                  </p>
+                    {result.type === "playlist" && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded">
+                        <ListMusic className="size-5 text-white" />
+                      </div>
+                    )}
+                    {/* 재생 오버레이 */}
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 rounded transition-colors">
+                      <Play className="size-6 text-white opacity-0 group-hover:opacity-100 transition-opacity fill-white" />
+                    </div>
+                  </button>
+                  {/* 정보 */}
+                  <button
+                    onClick={() => handleSelectResult(result, true)}
+                    className="min-w-0 flex-1 text-left"
+                  >
+                    <p className="text-sm font-medium truncate">{result.title}</p>
+                    <p className="text-xs text-muted-foreground truncate">{result.uploaderName}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {result.type === "playlist" ? (
+                        <span className="text-primary">{result.videos ?? 0}곡 재생목록</span>
+                      ) : (
+                        <>
+                          {result.views > 0 && `조회수 ${formatCount(result.views)}`}
+                        </>
+                      )}
+                    </p>
+                  </button>
+                  {/* 큐에 추가 버튼 (stream만) */}
+                  {result.type === "stream" && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={`size-8 shrink-0 ${isAdded ? "text-primary" : "text-muted-foreground opacity-0 group-hover:opacity-100"} transition-all`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSelectResult(result, false);
+                        if (videoId) setAddedIds((prev) => new Set(prev).add(videoId));
+                      }}
+                      title={isAdded ? "큐에 추가됨" : "큐에 추가"}
+                    >
+                      <ListPlus className="size-4" />
+                    </Button>
+                  )}
                 </div>
-              </button>
-            ))}
+              );
+            })}
           </div>
         </ScrollArea>
       )}

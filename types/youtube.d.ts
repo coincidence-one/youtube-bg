@@ -94,6 +94,8 @@ declare namespace YT {
       index?: number;
       startSeconds?: number;
     }): void;
+    loadVideoById(videoId: string, startSeconds?: number): void;
+    cueVideoById(videoId: string, startSeconds?: number): void;
     setPlaybackRate(suggestedRate: number): void;
     getPlaybackRate(): number;
     getAvailablePlaybackRates(): number[];
