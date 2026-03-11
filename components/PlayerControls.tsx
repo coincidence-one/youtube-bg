@@ -17,6 +17,7 @@ interface PlayerControlsProps {
   shuffle: boolean;
   repeat: RepeatMode;
   hasTrack: boolean;
+  large?: boolean;
   onTogglePlay: () => void;
   onNext: () => void;
   onPrevious: () => void;
@@ -29,69 +30,75 @@ export function PlayerControls({
   shuffle,
   repeat,
   hasTrack,
+  large = false,
   onTogglePlay,
   onNext,
   onPrevious,
   onToggleShuffle,
   onCycleRepeat,
 }: PlayerControlsProps) {
+  const sideBtn = large ? "size-11" : "size-8";
+  const sideIcon = large ? "size-6" : "size-4";
+  const mainBtn = large ? "size-14" : "size-9";
+  const mainIcon = large ? "size-6" : "size-4";
+
   return (
-    <div className="flex items-center gap-1 md:gap-2">
+    <div className={`flex items-center ${large ? "gap-3" : "gap-1 md:gap-2"}`}>
       <Button
         variant="ghost"
         size="icon"
-        className={`size-8 hidden sm:inline-flex ${shuffle ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+        className={`${sideBtn} hidden sm:inline-flex ${shuffle ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
         onClick={onToggleShuffle}
         disabled={!hasTrack}
       >
-        <Shuffle className="size-4" />
+        <Shuffle className={sideIcon} />
       </Button>
 
       <Button
         variant="ghost"
         size="icon"
-        className="size-8"
+        className={sideBtn}
         onClick={onPrevious}
         disabled={!hasTrack}
       >
-        <SkipBack className="size-4" />
+        <SkipBack className={sideIcon} />
       </Button>
 
       <Button
         variant="default"
         size="icon"
-        className="size-9 rounded-full"
+        className={`${mainBtn} rounded-full`}
         onClick={onTogglePlay}
         disabled={!hasTrack}
       >
         {isPlaying ? (
-          <Pause className="size-4" />
+          <Pause className={mainIcon} />
         ) : (
-          <Play className="size-4 ml-0.5" />
+          <Play className={`${mainIcon} ml-0.5`} />
         )}
       </Button>
 
       <Button
         variant="ghost"
         size="icon"
-        className="size-8"
+        className={sideBtn}
         onClick={onNext}
         disabled={!hasTrack}
       >
-        <SkipForward className="size-4" />
+        <SkipForward className={sideIcon} />
       </Button>
 
       <Button
         variant="ghost"
         size="icon"
-        className={`size-8 hidden sm:inline-flex ${repeat !== "off" ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+        className={`${sideBtn} hidden sm:inline-flex ${repeat !== "off" ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
         onClick={onCycleRepeat}
         disabled={!hasTrack}
       >
         {repeat === "one" ? (
-          <Repeat1 className="size-4" />
+          <Repeat1 className={sideIcon} />
         ) : (
-          <Repeat className="size-4" />
+          <Repeat className={sideIcon} />
         )}
       </Button>
     </div>

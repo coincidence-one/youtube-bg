@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Headphones, Shuffle, Repeat, Repeat1, Mic2, Search, UserCircle, LogIn } from "lucide-react";
+import { Headphones, Shuffle, Repeat, Repeat1, Mic2, Search, LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -19,12 +19,16 @@ import { SearchView } from "@/components/SearchView";
 import { SettingsMenu } from "@/components/SettingsMenu";
 import { SponsorSkipNotification } from "@/components/SponsorSkipNotification";
 import { UserMenu } from "@/components/UserMenu";
+import { GenreCards } from "@/components/GenreCards";
+import { RadioBanner } from "@/components/RadioBanner";
+import { InstallPrompt } from "@/components/InstallPrompt";
 import { useYouTubePlayer } from "@/hooks/useYouTubePlayer";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useSleepTimer } from "@/hooks/useSleepTimer";
 import { useSponsorBlock } from "@/hooks/useSponsorBlock";
 import { useVideoVotes } from "@/hooks/useVideoVotes";
 import { useUserSync } from "@/hooks/useUserSync";
+import { useRadioMode } from "@/hooks/useRadioMode";
 
 const PLAYER_ID = "yt-player";
 
@@ -60,6 +64,15 @@ export default function Home() {
   // 사용자 동기화 (다른 훅보다 먼저 선언)
   const userSync = useUserSync();
 
+  // 라디오 모드
+  const { radioState, startRadio, stopRadio, checkAndLoadMore } = useRadioMode(
+    addExternalTrack,
+    toggleShuffle,
+    state.shuffle
+  );
+
+  const [radioLoadingGenre, setRadioLoadingGenre] = useState<string | null>(null);
+
   // localStorage에서 마지막 재생목록 자동 복원 (로그인 필수)
   useEffect(() => {
     if (state.isReady && state.playlistId && !playlistLoaded && !userSync.isLoading && userSync.user) {
@@ -69,10 +82,19 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.isReady, userSync.isLoading, userSync.user]);
 
+  // 라디오: 곡이 끝에 가까워지면 자동 추가 로드
+  useEffect(() => {
+    if (radioState.active) {
+      checkAndLoadMore(state.currentIndex, state.playlist.length);
+    }
+  }, [radioState.active, state.currentIndex, state.playlist.length, checkAndLoadMore]);
+
   const handleLoadPlaylist = (playlistId: string) => {
     loadPlaylist(playlistId);
     setPlaylistLoaded(true);
     setShowSearch(false);
+    // 재생목록 로드 시 라디오 모드 해제
+    if (radioState.active) stopRadio();
   };
 
   // 외부 트랙 추가 (검색에서)
@@ -86,6 +108,17 @@ export default function Home() {
       if (playNow) setPlaylistLoaded(true);
     },
     [addExternalTrack]
+  );
+
+  // 장르 라디오 시작
+  const handleStartRadio = useCallback(
+    async (genreId: string) => {
+      setRadioLoadingGenre(genreId);
+      await startRadio(genreId);
+      setPlaylistLoaded(true);
+      setRadioLoadingGenre(null);
+    },
+    [startRadio]
   );
 
   // 슬립 타이머
@@ -251,12 +284,28 @@ export default function Home() {
               </div>
               <h2 className="text-2xl md:text-3xl font-bold">YouTube BG Player</h2>
               <p className="text-muted-foreground max-w-md">
-                YouTube 재생목록 URL을 입력하면 백그라운드에서 음악을 들을 수 있습니다.
-                탭을 전환해도 재생이 계속됩니다.
+                장르를 선택하거나 재생목록 URL을 입력하면 백그라운드에서 음악을 들을 수 있습니다.
               </p>
             </div>
+
             {userSync.isLoading ? null : userSync.user ? (
-              <PlaylistInput onLoadPlaylist={handleLoadPlaylist} isLoading={state.isLoading} />
+              <div className="w-full max-w-2xl space-y-8">
+                {/* 장르 라디오 카드 (메인) */}
+                <GenreCards
+                  onSelectGenre={handleStartRadio}
+                  loadingGenreId={radioLoadingGenre}
+                />
+
+                {/* 구분선 */}
+                <div className="flex items-center gap-4">
+                  <div className="flex-1 border-t" />
+                  <span className="text-xs text-muted-foreground">또는 재생목록 URL 입력</span>
+                  <div className="flex-1 border-t" />
+                </div>
+
+                {/* 재생목록 입력 (보조) */}
+                <PlaylistInput onLoadPlaylist={handleLoadPlaylist} isLoading={state.isLoading} />
+              </div>
             ) : (
               <div className="flex flex-col items-center gap-4">
                 <Button
@@ -276,6 +325,9 @@ export default function Home() {
         ) : (
           /* 재생 화면 */
           <div className="space-y-6">
+            {/* 라디오 배너 */}
+            <RadioBanner radioState={radioState} onStop={stopRadio} />
+
             {/* 상단: URL 입력 (축소 버전, 모바일에서는 검색으로 대체) */}
             <div className="hidden md:block">
               <PlaylistInput onLoadPlaylist={handleLoadPlaylist} isLoading={state.isLoading} />
@@ -295,8 +347,8 @@ export default function Home() {
                       />
                     )}
                     <div className="text-center w-full">
-                      <h3 className="font-semibold truncate">{state.currentTrack.title}</h3>
-                      <p className="text-sm text-muted-foreground truncate">{state.currentTrack.author}</p>
+                      <h3 className="text-lg font-bold truncate">{state.currentTrack.title}</h3>
+                      <p className="text-base text-muted-foreground truncate">{state.currentTrack.author}</p>
                     </div>
 
                     {/* 모바일 전용 프로그레스바 */}
@@ -307,15 +359,15 @@ export default function Home() {
                       segments={sponsorBlock.enabled ? sponsorBlock.segments : undefined}
                     />
 
-                    {/* 모바일 전용 추가 컨트롤 */}
+                    {/* 모바일 전용 추가 컨트롤 (큰 버튼) */}
                     <div className="flex items-center justify-center gap-4">
                       <Button
                         variant="ghost"
                         size="icon"
-                        className={`size-9 ${state.shuffle ? "text-primary" : "text-muted-foreground"}`}
+                        className={`size-10 ${state.shuffle ? "text-primary" : "text-muted-foreground"}`}
                         onClick={toggleShuffle}
                       >
-                        <Shuffle className="size-4" />
+                        <Shuffle className="size-5" />
                       </Button>
                       <VolumeControl
                         volume={state.volume}
@@ -326,24 +378,24 @@ export default function Home() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className={`size-9 ${state.repeat !== "off" ? "text-primary" : "text-muted-foreground"}`}
+                        className={`size-10 ${state.repeat !== "off" ? "text-primary" : "text-muted-foreground"}`}
                         onClick={cycleRepeat}
                       >
                         {state.repeat === "one" ? (
-                          <Repeat1 className="size-4" />
+                          <Repeat1 className="size-5" />
                         ) : (
-                          <Repeat className="size-4" />
+                          <Repeat className="size-5" />
                         )}
                       </Button>
                       {/* 가사 토글 (모바일) */}
                       <Button
                         variant="ghost"
                         size="icon"
-                        className={`size-9 ${showLyrics ? "text-primary" : "text-muted-foreground"}`}
+                        className={`size-10 ${showLyrics ? "text-primary" : "text-muted-foreground"}`}
                         onClick={() => setShowLyrics(!showLyrics)}
                         title="가사"
                       >
-                        <Mic2 className="size-4" />
+                        <Mic2 className="size-5" />
                       </Button>
                     </div>
 
@@ -474,6 +526,9 @@ export default function Home() {
         category={sponsorBlock.lastSkippedCategory}
         onDismiss={sponsorBlock.clearNotification}
       />
+
+      {/* PWA 설치 유도 */}
+      <InstallPrompt />
 
       {/* 하단 고정 플레이어 바 */}
       {playlistLoaded && (

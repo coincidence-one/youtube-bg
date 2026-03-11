@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Mic2, Loader2 } from "lucide-react";
+import { Mic2, Loader2, AArrowUp, AArrowDown } from "lucide-react";
 import { fetchLyrics, parseSyncedLyrics, type SyncedLine } from "@/lib/lyrics";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from "@/components/ui/button";
+
+const STORAGE_KEY = "ytbg-lyrics-large";
 
 interface LyricsViewProps {
   title: string;
@@ -16,8 +19,25 @@ export function LyricsView({ title, artist, currentTime }: LyricsViewProps) {
   const [syncedLines, setSyncedLines] = useState<SyncedLine[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  const [largeText, setLargeText] = useState(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
   const currentLineRef = useRef<HTMLParagraphElement>(null);
   const fetchKeyRef = useRef("");
+
+  const toggleLargeText = () => {
+    setLargeText((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(STORAGE_KEY, String(next));
+      } catch {}
+      return next;
+    });
+  };
 
   // 곡이 바뀌면 가사 새로 검색
   useEffect(() => {
@@ -71,6 +91,19 @@ export function LyricsView({ title, artist, currentTime }: LyricsViewProps) {
     }
   }, [currentLineIndex]);
 
+  // 글씨 크기 토글 버튼
+  const fontSizeToggle = (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="absolute top-1 right-1 size-7 text-muted-foreground hover:text-foreground z-10"
+      onClick={toggleLargeText}
+      title={largeText ? "작은 글씨" : "큰 글씨"}
+    >
+      {largeText ? <AArrowDown className="size-4" /> : <AArrowUp className="size-4" />}
+    </Button>
+  );
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
@@ -92,34 +125,42 @@ export function LyricsView({ title, artist, currentTime }: LyricsViewProps) {
   // 싱크 가사 (노래방 스타일)
   if (syncedLines && syncedLines.length > 0) {
     return (
-      <ScrollArea className="h-full">
-        <div className="space-y-3 p-4">
-          {syncedLines.map((line, i) => (
-            <p
-              key={i}
-              ref={i === currentLineIndex ? currentLineRef : undefined}
-              className={`transition-all duration-300 cursor-default ${
-                i === currentLineIndex
-                  ? "text-primary font-semibold text-base"
-                  : i < currentLineIndex
-                  ? "text-muted-foreground/40 text-sm"
-                  : "text-muted-foreground text-sm"
-              }`}
-            >
-              {line.text}
-            </p>
-          ))}
-        </div>
-      </ScrollArea>
+      <div className="relative h-full">
+        {fontSizeToggle}
+        <ScrollArea className="h-full">
+          <div className={`${largeText ? "space-y-4" : "space-y-3"} p-4 pt-8`}>
+            {syncedLines.map((line, i) => (
+              <p
+                key={i}
+                ref={i === currentLineIndex ? currentLineRef : undefined}
+                className={`transition-all duration-300 cursor-default ${
+                  i === currentLineIndex
+                    ? `text-primary font-semibold ${largeText ? "text-xl" : "text-base"}`
+                    : i < currentLineIndex
+                    ? `text-muted-foreground/40 ${largeText ? "text-base" : "text-sm"}`
+                    : `text-muted-foreground ${largeText ? "text-base" : "text-sm"}`
+                }`}
+              >
+                {line.text}
+              </p>
+            ))}
+          </div>
+        </ScrollArea>
+      </div>
     );
   }
 
   // 일반 가사
   return (
-    <ScrollArea className="h-full">
-      <div className="p-4 whitespace-pre-wrap text-sm text-muted-foreground leading-relaxed">
-        {lyrics}
-      </div>
-    </ScrollArea>
+    <div className="relative h-full">
+      {fontSizeToggle}
+      <ScrollArea className="h-full">
+        <div className={`p-4 pt-8 whitespace-pre-wrap text-muted-foreground leading-relaxed ${
+          largeText ? "text-base" : "text-sm"
+        }`}>
+          {lyrics}
+        </div>
+      </ScrollArea>
+    </div>
   );
 }
