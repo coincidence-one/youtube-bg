@@ -57,14 +57,17 @@ export default function Home() {
   const [showLyrics, setShowLyrics] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
 
-  // localStorage에서 마지막 재생목록 자동 복원
+  // 사용자 동기화 (다른 훅보다 먼저 선언)
+  const userSync = useUserSync();
+
+  // localStorage에서 마지막 재생목록 자동 복원 (로그인 필수)
   useEffect(() => {
-    if (state.isReady && state.playlistId && !playlistLoaded) {
+    if (state.isReady && state.playlistId && !playlistLoaded && !userSync.isLoading && userSync.user) {
       loadPlaylist(state.playlistId);
       setPlaylistLoaded(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.isReady]);
+  }, [state.isReady, userSync.isLoading, userSync.user]);
 
   const handleLoadPlaylist = (playlistId: string) => {
     loadPlaylist(playlistId);
@@ -103,9 +106,6 @@ export default function Home() {
 
   // Return YouTube Dislike
   const votes = useVideoVotes(state.currentTrack?.videoId ?? null);
-
-  // 사용자 동기화
-  const userSync = useUserSync();
 
   // 설정 변경 시 클라우드 동기화
   useEffect(() => {
