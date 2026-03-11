@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Headphones, Shuffle, Repeat, Repeat1, Mic2, Search } from "lucide-react";
+import { Headphones, Shuffle, Repeat, Repeat1, Mic2, Search, UserCircle, LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -185,7 +185,7 @@ export default function Home() {
               variant="ghost"
               size="icon"
               className={`size-8 ${showSearch ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
-              onClick={handleToggleSearch}
+              onClick={() => userSync.user ? handleToggleSearch() : userSync.signIn()}
               title="검색 (S)"
             >
               <Search className="size-4" />
@@ -243,7 +243,7 @@ export default function Home() {
           /* 검색 화면 */
           <SearchView onLoadPlaylist={handleLoadPlaylist} onAddTrack={handleAddExternalTrack} onClose={() => setShowSearch(false)} />
         ) : !playlistLoaded ? (
-          /* 초기 화면: 재생목록 입력 */
+          /* 초기 화면 */
           <div className="flex flex-col items-center justify-center min-h-[60vh] gap-8">
             <div className="text-center space-y-3">
               <div className="inline-flex items-center justify-center size-20 rounded-full bg-primary/10 mb-4">
@@ -255,7 +255,23 @@ export default function Home() {
                 탭을 전환해도 재생이 계속됩니다.
               </p>
             </div>
-            <PlaylistInput onLoadPlaylist={handleLoadPlaylist} isLoading={state.isLoading} />
+            {userSync.isLoading ? null : userSync.user ? (
+              <PlaylistInput onLoadPlaylist={handleLoadPlaylist} isLoading={state.isLoading} />
+            ) : (
+              <div className="flex flex-col items-center gap-4">
+                <Button
+                  size="lg"
+                  className="gap-2"
+                  onClick={userSync.signIn}
+                >
+                  <LogIn className="size-4" />
+                  Google로 로그인
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  로그인하면 재생목록, 즐겨찾기가 클라우드에 동기화됩니다
+                </p>
+              </div>
+            )}
           </div>
         ) : (
           /* 재생 화면 */
