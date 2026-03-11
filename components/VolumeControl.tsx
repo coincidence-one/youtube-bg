@@ -20,7 +20,7 @@ export function VolumeControl({
   const VolumeIcon = isMuted || volume === 0 ? VolumeX : volume < 50 ? Volume1 : Volume2;
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="group/vol flex items-center gap-2">
       <Button
         variant="ghost"
         size="icon"
@@ -29,14 +29,16 @@ export function VolumeControl({
       >
         <VolumeIcon className="size-4" />
       </Button>
-      <Slider
-        value={[isMuted ? 0 : volume]}
-        min={0}
-        max={100}
-        step={1}
-        onValueChange={(value) => onVolumeChange(Array.isArray(value) ? value[0] : value)}
-        className="w-24"
-      />
+      <div className="w-0 overflow-hidden opacity-0 group-hover/vol:w-24 group-hover/vol:opacity-100 transition-all duration-200">
+        <Slider
+          value={[isMuted ? 0 : volume]}
+          min={0}
+          max={100}
+          step={1}
+          onValueChange={(value) => onVolumeChange(Array.isArray(value) ? value[0] : value)}
+          className="w-24"
+        />
+      </div>
     </div>
   );
 }
