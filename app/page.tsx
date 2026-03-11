@@ -12,15 +12,11 @@ import { PlayerControls } from "@/components/PlayerControls";
 import { PlaylistView } from "@/components/PlaylistView";
 import { ProgressBar } from "@/components/ProgressBar";
 import { VolumeControl } from "@/components/VolumeControl";
-import { SleepTimer } from "@/components/SleepTimer";
-import { PlaybackSpeed } from "@/components/PlaybackSpeed";
-import { KeyboardHint } from "@/components/KeyboardHint";
-import { ViewModeToggle } from "@/components/ViewModeToggle";
 import { FavoritePlaylists } from "@/components/FavoritePlaylists";
 import { LyricsView } from "@/components/LyricsView";
 import { PiPButton } from "@/components/PiPButton";
 import { SearchView } from "@/components/SearchView";
-import { SponsorBlockToggle } from "@/components/SponsorBlockToggle";
+import { SettingsMenu } from "@/components/SettingsMenu";
 import { SponsorSkipNotification } from "@/components/SponsorSkipNotification";
 import { UserMenu } from "@/components/UserMenu";
 import { useYouTubePlayer } from "@/hooks/useYouTubePlayer";
@@ -29,7 +25,6 @@ import { useSleepTimer } from "@/hooks/useSleepTimer";
 import { useSponsorBlock } from "@/hooks/useSponsorBlock";
 import { useVideoVotes } from "@/hooks/useVideoVotes";
 import { useUserSync } from "@/hooks/useUserSync";
-import { loadFavorites } from "@/lib/favorites";
 
 const PLAYER_ID = "yt-player";
 
@@ -128,12 +123,6 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sponsorBlock.enabled]);
 
-  // 즐겨찾기 변경 콜백
-  const handleFavoritesChange = useCallback(() => {
-    userSync.syncFavorites(loadFavorites());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userSync.syncFavorites]);
-
   // 키보드 단축키
   const handleVolumeUp = useCallback(() => {
     setVolume(Math.min(100, state.volume + 5));
@@ -207,12 +196,12 @@ export default function Home() {
                   currentPlaylistId={state.playlistId}
                   playlist={state.playlist}
                   onLoadPlaylist={handleLoadPlaylist}
-                  onFavoritesChange={handleFavoritesChange}
-                />
-                <SponsorBlockToggle
-                  enabled={sponsorBlock.enabled}
-                  segmentCount={sponsorBlock.segments.length}
-                  onToggle={sponsorBlock.toggleEnabled}
+                  user={userSync.user}
+                  favorites={userSync.favorites}
+                  isFavorite={userSync.isFavorite}
+                  addFavorite={userSync.addFavorite}
+                  removeFavorite={userSync.removeFavorite}
+                  onSignIn={userSync.signIn}
                 />
                 <PiPButton
                   track={state.currentTrack}
@@ -221,10 +210,17 @@ export default function Home() {
                   onNext={next}
                   onPrevious={previous}
                 />
-                <ViewModeToggle videoMode={state.videoMode} onToggle={toggleVideoMode} />
-                <SleepTimer timerState={timerState} onSetTimer={setTimer} />
-                <PlaybackSpeed rate={state.playbackRate} onRateChange={setPlaybackRate} />
-                <KeyboardHint />
+                <SettingsMenu
+                  playbackRate={state.playbackRate}
+                  onRateChange={setPlaybackRate}
+                  timerState={timerState}
+                  onSetTimer={setTimer}
+                  sponsorBlockEnabled={sponsorBlock.enabled}
+                  sponsorBlockSegmentCount={sponsorBlock.segments.length}
+                  onToggleSponsorBlock={handleToggleSponsorBlock}
+                  videoMode={state.videoMode}
+                  onToggleVideoMode={toggleVideoMode}
+                />
               </>
             )}
             <UserMenu
@@ -264,8 +260,10 @@ export default function Home() {
         ) : (
           /* 재생 화면 */
           <div className="space-y-6">
-            {/* 상단: URL 입력 (축소 버전) */}
-            <PlaylistInput onLoadPlaylist={handleLoadPlaylist} isLoading={state.isLoading} />
+            {/* 상단: URL 입력 (축소 버전, 모바일에서는 검색으로 대체) */}
+            <div className="hidden md:block">
+              <PlaylistInput onLoadPlaylist={handleLoadPlaylist} isLoading={state.isLoading} />
+            </div>
 
             {/* 현재 재생 중인 곡 정보 (모바일/태블릿) */}
             {state.currentTrack && (

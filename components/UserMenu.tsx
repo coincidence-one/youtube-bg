@@ -22,17 +22,18 @@ export function UserMenu({ user, isLoading, onSignIn, onSignOut }: UserMenuProps
     return <Button variant="ghost" size="icon" className="size-8" />;
   }
 
-  // 비로그인 — 로그인 버튼
+  // 비로그인 — 로그인 버튼 (텍스트 포함)
   if (!user) {
     return (
       <Button
-        variant="ghost"
-        size="icon"
-        className="size-8 text-muted-foreground hover:text-foreground"
+        variant="outline"
+        size="sm"
+        className="h-8 gap-1.5 text-xs"
         onClick={onSignIn}
         title="Google로 로그인"
       >
-        <UserCircle className="size-4" />
+        <UserCircle className="size-3.5" />
+        로그인
       </Button>
     );
   }

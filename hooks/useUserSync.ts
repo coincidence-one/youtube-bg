@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
-import { loadFavorites, saveFavorite, type FavoritePlaylist } from "@/lib/favorites";
 
 // ------- 타입 -------
 
@@ -13,6 +12,14 @@ export interface UserPreferences {
   videoMode: boolean;
   sponsorBlockEnabled: boolean;
   lastPlaylistId: string | null;
+}
+
+export interface FavoritePlaylist {
+  id: string;
+  name: string;
+  trackCount: number;
+  addedAt: number;
+  thumbnail?: string;
 }
 
 interface DbPreferences {
@@ -38,16 +45,20 @@ interface DbFavorite {
 export interface UseUserSyncReturn {
   user: User | null;
   isLoading: boolean;
+  favorites: FavoritePlaylist[];
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
   syncPreferences: (prefs: Partial<UserPreferences>) => void;
-  syncFavorites: (favorites: FavoritePlaylist[]) => void;
+  addFavorite: (fav: FavoritePlaylist) => Promise<void>;
+  removeFavorite: (playlistId: string) => Promise<void>;
+  isFavorite: (playlistId: string) => boolean;
 }
 
 // ------- 상수 -------
 
 const STORAGE_KEY = "ytbg-state";
 const SB_KEY = "ytbg-sb-enabled";
+const LEGACY_FAV_KEY = "ytbg-favorites";
 const SYNC_DEBOUNCE = 500;
 
 // ------- 헬퍼 -------
@@ -93,28 +104,38 @@ function writeLocalPrefs(prefs: Partial<UserPreferences>) {
   }
 }
 
+function dbToFav(db: DbFavorite): FavoritePlaylist {
+  return {
+    id: db.playlist_id,
+    name: db.name,
+    trackCount: db.track_count,
+    addedAt: db.added_at,
+    thumbnail: db.thumbnail ?? undefined,
+  };
+}
+
 // ------- 훅 -------
 
 /** Supabase 미설정 시 반환하는 noop 객체 */
 const NOOP_RETURN: UseUserSyncReturn = {
   user: null,
   isLoading: false,
+  favorites: [],
   signIn: async () => {},
   signOut: async () => {},
   syncPreferences: () => {},
-  syncFavorites: () => {},
+  addFavorite: async () => {},
+  removeFavorite: async () => {},
+  isFavorite: () => false,
 };
 
 export function useUserSync(): UseUserSyncReturn {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(isSupabaseConfigured);
+  const [favorites, setFavorites] = useState<FavoritePlaylist[]>([]);
   const supabaseRef = useRef(createClient());
   const prefTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const favTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mergedRef = useRef(false);
-
-  // ------ Supabase 미설정 시 즉시 반환 ------
-  // (훅 규칙상 조건부 return은 안 되지만, 모든 훅이 위에서 호출된 후이므로 OK)
 
   // ------ Auth 초기화 ------
   useEffect(() => {
@@ -127,6 +148,10 @@ export function useUserSync(): UseUserSyncReturn {
     supabase.auth.getUser().then(({ data }) => {
       setUser(data.user);
       setIsLoading(false);
+      // 이미 로그인된 상태면 즐겨찾기 로드
+      if (data.user) {
+        fetchFavorites(data.user.id);
+      }
     });
 
     const {
@@ -139,11 +164,30 @@ export function useUserSync(): UseUserSyncReturn {
         mergedRef.current = false;
         mergeOnLogin(newUser.id);
       }
+      if (event === "SIGNED_OUT") {
+        setFavorites([]);
+      }
     });
 
     return () => subscription.unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ------ 즐겨찾기 로드 ------
+  async function fetchFavorites(userId: string) {
+    const supabase = supabaseRef.current;
+    if (!supabase) return;
+
+    const { data } = await supabase
+      .from("user_favorites")
+      .select("*")
+      .eq("user_id", userId)
+      .order("added_at", { ascending: false });
+
+    if (data) {
+      setFavorites(data.map(dbToFav));
+    }
+  }
 
   // ------ 로그인 시 병합 ------
   async function mergeOnLogin(userId: string) {
@@ -163,7 +207,6 @@ export function useUserSync(): UseUserSyncReturn {
     const localPrefs = readLocalPrefs();
 
     if (cloudPrefs) {
-      // 클라우드 우선 → localStorage에 반영
       writeLocalPrefs({
         volume: cloudPrefs.volume,
         playbackRate: cloudPrefs.playback_rate,
@@ -172,7 +215,6 @@ export function useUserSync(): UseUserSyncReturn {
         lastPlaylistId: cloudPrefs.last_playlist_id,
       });
     } else {
-      // 첫 로그인 → localStorage 값으로 클라우드 초기화
       await supabase.from("user_preferences").upsert({
         id: userId,
         volume: localPrefs.volume,
@@ -183,47 +225,87 @@ export function useUserSync(): UseUserSyncReturn {
       });
     }
 
-    // 2) 즐겨찾기 병합
-    const { data: cloudFavs } = await supabase
-      .from("user_favorites")
-      .select("*")
-      .eq("user_id", userId);
+    // 2) 일회성 마이그레이션: localStorage 즐겨찾기 → Supabase
+    try {
+      const localRaw = localStorage.getItem(LEGACY_FAV_KEY);
+      if (localRaw) {
+        const localFavs: FavoritePlaylist[] = JSON.parse(localRaw);
+        if (localFavs.length > 0) {
+          const toUpsert = localFavs.map((f) => ({
+            user_id: userId,
+            playlist_id: f.id,
+            name: f.name,
+            track_count: f.trackCount,
+            thumbnail: f.thumbnail ?? null,
+            added_at: f.addedAt,
+          }));
+          await supabase
+            .from("user_favorites")
+            .upsert(toUpsert, { onConflict: "user_id,playlist_id" });
+        }
+        localStorage.removeItem(LEGACY_FAV_KEY);
+      }
+    } catch {
+      // 마이그레이션 실패는 무시
+    }
 
-    const localFavs = loadFavorites();
-    const cloudMap = new Map((cloudFavs ?? []).map((f: DbFavorite) => [f.playlist_id, f]));
-    const localMap = new Map(localFavs.map((f) => [f.id, f]));
+    // 3) 클라우드 즐겨찾기 로드
+    await fetchFavorites(userId);
+  }
 
-    // 로컬에만 있는 항목 → 클라우드에 추가
-    const toInsert: DbFavorite[] = [];
-    for (const [pid, fav] of localMap) {
-      if (!cloudMap.has(pid)) {
-        toInsert.push({
-          user_id: userId,
-          playlist_id: pid,
+  // ------ 즐겨찾기 CRUD ------
+  const addFavorite = useCallback(
+    async (fav: FavoritePlaylist) => {
+      const supabase = supabaseRef.current;
+      if (!user || !supabase) return;
+
+      // 낙관적 업데이트
+      setFavorites((prev) => {
+        const exists = prev.some((f) => f.id === fav.id);
+        if (exists) return prev;
+        return [fav, ...prev];
+      });
+
+      // Supabase upsert
+      await supabase.from("user_favorites").upsert(
+        {
+          user_id: user.id,
+          playlist_id: fav.id,
           name: fav.name,
           track_count: fav.trackCount,
           thumbnail: fav.thumbnail ?? null,
           added_at: fav.addedAt,
-        });
-      }
-    }
-    if (toInsert.length > 0) {
-      await supabase.from("user_favorites").insert(toInsert);
-    }
+        },
+        { onConflict: "user_id,playlist_id" }
+      );
+    },
+    [user]
+  );
 
-    // 클라우드에만 있는 항목 → localStorage에 추가
-    for (const [, cf] of cloudMap) {
-      if (!localMap.has(cf.playlist_id)) {
-        saveFavorite({
-          id: cf.playlist_id,
-          name: cf.name,
-          trackCount: cf.track_count,
-          addedAt: cf.added_at,
-          thumbnail: cf.thumbnail ?? undefined,
-        });
-      }
-    }
-  }
+  const removeFavorite = useCallback(
+    async (playlistId: string) => {
+      const supabase = supabaseRef.current;
+      if (!user || !supabase) return;
+
+      // 낙관적 업데이트
+      setFavorites((prev) => prev.filter((f) => f.id !== playlistId));
+
+      // Supabase delete
+      await supabase
+        .from("user_favorites")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("playlist_id", playlistId);
+    },
+    [user]
+  );
+
+  const isFavorite = useCallback(
+    (playlistId: string) => {
+      return favorites.some((f) => f.id === playlistId);
+    },
+    [favorites]
+  );
 
   // ------ 설정 동기화 (디바운스) ------
   const syncPreferences = useCallback(
@@ -248,53 +330,6 @@ export function useUserSync(): UseUserSyncReturn {
     [user]
   );
 
-  // ------ 즐겨찾기 동기화 (디바운스) ------
-  const syncFavorites = useCallback(
-    (favorites: FavoritePlaylist[]) => {
-      const supabase = supabaseRef.current;
-      if (!user || !supabase) return;
-      if (favTimerRef.current) clearTimeout(favTimerRef.current);
-
-      favTimerRef.current = setTimeout(async () => {
-        // 현재 클라우드 상태 가져오기
-        const { data: cloudFavs } = await supabase
-          .from("user_favorites")
-          .select("playlist_id")
-          .eq("user_id", user.id);
-
-        const cloudIds = new Set((cloudFavs ?? []).map((f: { playlist_id: string }) => f.playlist_id));
-        const localIds = new Set(favorites.map((f) => f.id));
-
-        // 삭제할 항목
-        const toDelete = [...cloudIds].filter((id) => !localIds.has(id));
-        if (toDelete.length > 0) {
-          await supabase
-            .from("user_favorites")
-            .delete()
-            .eq("user_id", user.id)
-            .in("playlist_id", toDelete);
-        }
-
-        // upsert
-        const toUpsert = favorites.map((f) => ({
-          user_id: user.id,
-          playlist_id: f.id,
-          name: f.name,
-          track_count: f.trackCount,
-          thumbnail: f.thumbnail ?? null,
-          added_at: f.addedAt,
-        }));
-
-        if (toUpsert.length > 0) {
-          await supabase
-            .from("user_favorites")
-            .upsert(toUpsert, { onConflict: "user_id,playlist_id" });
-        }
-      }, SYNC_DEBOUNCE);
-    },
-    [user]
-  );
-
   // ------ 로그인/로그아웃 ------
   const signIn = useCallback(async () => {
     const supabase = supabaseRef.current;
@@ -312,6 +347,7 @@ export function useUserSync(): UseUserSyncReturn {
     if (!supabase) return;
     await supabase.auth.signOut();
     setUser(null);
+    setFavorites([]);
     mergedRef.current = false;
   }, []);
 
@@ -320,5 +356,15 @@ export function useUserSync(): UseUserSyncReturn {
     return NOOP_RETURN;
   }
 
-  return { user, isLoading, signIn, signOut, syncPreferences, syncFavorites };
+  return {
+    user,
+    isLoading,
+    favorites,
+    signIn,
+    signOut,
+    syncPreferences,
+    addFavorite,
+    removeFavorite,
+    isFavorite,
+  };
 }

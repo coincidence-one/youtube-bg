@@ -1,67 +1,64 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Star, Trash2, Library } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  loadFavorites,
-  saveFavorite,
-  removeFavorite,
-  isFavorite,
-  type FavoritePlaylist,
-} from "@/lib/favorites";
+import type { User } from "@supabase/supabase-js";
+import type { FavoritePlaylist } from "@/hooks/useUserSync";
 import { getThumbnailUrl } from "@/lib/youtube";
 
 interface FavoritePlaylistsProps {
   currentPlaylistId: string | null;
   playlist: string[];
   onLoadPlaylist: (playlistId: string) => void;
-  onFavoritesChange?: () => void;
+  user: User | null;
+  favorites: FavoritePlaylist[];
+  isFavorite: (id: string) => boolean;
+  addFavorite: (fav: FavoritePlaylist) => Promise<void>;
+  removeFavorite: (id: string) => Promise<void>;
+  onSignIn: () => Promise<void>;
 }
 
 export function FavoritePlaylists({
   currentPlaylistId,
   playlist,
   onLoadPlaylist,
-  onFavoritesChange,
+  user,
+  favorites,
+  isFavorite: checkIsFavorite,
+  addFavorite,
+  removeFavorite,
+  onSignIn,
 }: FavoritePlaylistsProps) {
   const [open, setOpen] = useState(false);
-  const [favorites, setFavorites] = useState<FavoritePlaylist[]>([]);
-  const [isSaved, setIsSaved] = useState(false);
 
-  // 즐겨찾기 목록 갱신
-  useEffect(() => {
-    setFavorites(loadFavorites());
-    if (currentPlaylistId) {
-      setIsSaved(isFavorite(currentPlaylistId));
-    }
-  }, [open, currentPlaylistId]);
+  const isSaved = currentPlaylistId ? checkIsFavorite(currentPlaylistId) : false;
 
-  const handleToggleFavorite = () => {
+  const handleToggleFavorite = async () => {
     if (!currentPlaylistId) return;
+
+    // 비로그인 → 로그인 유도
+    if (!user) {
+      onSignIn();
+      return;
+    }
+
     if (isSaved) {
-      removeFavorite(currentPlaylistId);
-      setIsSaved(false);
+      await removeFavorite(currentPlaylistId);
     } else {
-      saveFavorite({
+      await addFavorite({
         id: currentPlaylistId,
         name: `재생목록 (${playlist.length}곡)`,
         trackCount: playlist.length,
         addedAt: Date.now(),
         thumbnail: playlist[0] ? getThumbnailUrl(playlist[0], "default") : undefined,
       });
-      setIsSaved(true);
     }
-    setFavorites(loadFavorites());
-    onFavoritesChange?.();
   };
 
-  const handleRemove = (e: React.MouseEvent, id: string) => {
+  const handleRemove = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    removeFavorite(id);
-    if (id === currentPlaylistId) setIsSaved(false);
-    setFavorites(loadFavorites());
-    onFavoritesChange?.();
+    await removeFavorite(id);
   };
 
   return (
@@ -73,7 +70,7 @@ export function FavoritePlaylists({
           size="icon"
           className={`size-8 ${isSaved ? "text-yellow-500" : "text-muted-foreground hover:text-foreground"}`}
           onClick={handleToggleFavorite}
-          title={isSaved ? "즐겨찾기 해제" : "즐겨찾기에 추가"}
+          title={!user ? "로그인하면 즐겨찾기 저장 가능" : isSaved ? "즐겨찾기 해제" : "즐겨찾기에 추가"}
         >
           <Star className={`size-4 ${isSaved ? "fill-current" : ""}`} />
         </Button>
