@@ -16,12 +16,14 @@ interface FavoritePlaylistsProps {
   currentPlaylistId: string | null;
   playlist: string[];
   onLoadPlaylist: (playlistId: string) => void;
+  onFavoritesChange?: () => void;
 }
 
 export function FavoritePlaylists({
   currentPlaylistId,
   playlist,
   onLoadPlaylist,
+  onFavoritesChange,
 }: FavoritePlaylistsProps) {
   const [open, setOpen] = useState(false);
   const [favorites, setFavorites] = useState<FavoritePlaylist[]>([]);
@@ -51,6 +53,7 @@ export function FavoritePlaylists({
       setIsSaved(true);
     }
     setFavorites(loadFavorites());
+    onFavoritesChange?.();
   };
 
   const handleRemove = (e: React.MouseEvent, id: string) => {
@@ -58,6 +61,7 @@ export function FavoritePlaylists({
     removeFavorite(id);
     if (id === currentPlaylistId) setIsSaved(false);
     setFavorites(loadFavorites());
+    onFavoritesChange?.();
   };
 
   return (

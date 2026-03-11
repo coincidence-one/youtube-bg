@@ -22,11 +22,14 @@ import { PiPButton } from "@/components/PiPButton";
 import { SearchView } from "@/components/SearchView";
 import { SponsorBlockToggle } from "@/components/SponsorBlockToggle";
 import { SponsorSkipNotification } from "@/components/SponsorSkipNotification";
+import { UserMenu } from "@/components/UserMenu";
 import { useYouTubePlayer } from "@/hooks/useYouTubePlayer";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useSleepTimer } from "@/hooks/useSleepTimer";
 import { useSponsorBlock } from "@/hooks/useSponsorBlock";
 import { useVideoVotes } from "@/hooks/useVideoVotes";
+import { useUserSync } from "@/hooks/useUserSync";
+import { loadFavorites } from "@/lib/favorites";
 
 const PLAYER_ID = "yt-player";
 
@@ -106,6 +109,31 @@ export default function Home() {
   // Return YouTube Dislike
   const votes = useVideoVotes(state.currentTrack?.videoId ?? null);
 
+  // 사용자 동기화
+  const userSync = useUserSync();
+
+  // 설정 변경 시 클라우드 동기화
+  useEffect(() => {
+    userSync.syncPreferences({
+      volume: state.volume,
+      playbackRate: state.playbackRate,
+      videoMode: state.videoMode,
+      lastPlaylistId: state.playlistId,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.volume, state.playbackRate, state.videoMode, state.playlistId]);
+
+  useEffect(() => {
+    userSync.syncPreferences({ sponsorBlockEnabled: sponsorBlock.enabled });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sponsorBlock.enabled]);
+
+  // 즐겨찾기 변경 콜백
+  const handleFavoritesChange = useCallback(() => {
+    userSync.syncFavorites(loadFavorites());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userSync.syncFavorites]);
+
   // 키보드 단축키
   const handleVolumeUp = useCallback(() => {
     setVolume(Math.min(100, state.volume + 5));
@@ -179,6 +207,7 @@ export default function Home() {
                   currentPlaylistId={state.playlistId}
                   playlist={state.playlist}
                   onLoadPlaylist={handleLoadPlaylist}
+                  onFavoritesChange={handleFavoritesChange}
                 />
                 <SponsorBlockToggle
                   enabled={sponsorBlock.enabled}
@@ -198,6 +227,12 @@ export default function Home() {
                 <KeyboardHint />
               </>
             )}
+            <UserMenu
+              user={userSync.user}
+              isLoading={userSync.isLoading}
+              onSignIn={userSync.signIn}
+              onSignOut={userSync.signOut}
+            />
             <ThemeToggle />
           </div>
         </div>
