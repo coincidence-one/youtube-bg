@@ -16,7 +16,7 @@ export function RadioBanner({ radioState, onStop }: RadioBannerProps) {
     <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-primary/5 border border-primary/10 text-sm">
       <span className="size-1.5 rounded-full bg-primary shrink-0 animate-pulse" />
       <span className="font-medium shrink-0">
-        {radioState.genreEmoji} {radioState.genreName} 라디오
+        {radioState.genreName} 라디오
       </span>
       <span className="text-muted-foreground text-xs shrink-0">
         {radioState.loadedCount}곡

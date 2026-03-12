@@ -8,67 +8,49 @@ import { ytSearch, type SearchResult } from "@/lib/youtube-api";
 export interface Genre {
   id: string;
   name: string;
-  emoji: string;
   queries: string[];
-  gradient: string; // Tailwind gradient classes
 }
 
 export const GENRES: Genre[] = [
   {
     id: "trot",
     name: "트로트",
-    emoji: "🎤",
     queries: ["트로트 인기곡 모음", "트로트 명곡 메들리", "트로트 최신 인기곡"],
-    gradient: "from-rose-500 to-pink-600",
   },
   {
     id: "ballad",
     name: "발라드",
-    emoji: "🎵",
     queries: ["한국 발라드 명곡 모음", "감성 발라드 플레이리스트", "발라드 인기곡 모음"],
-    gradient: "from-blue-500 to-indigo-600",
   },
   {
     id: "7080",
     name: "7080 가요",
-    emoji: "📻",
     queries: ["7080 가요 모음", "추억의 가요 명곡", "7080 히트곡 메들리"],
-    gradient: "from-amber-500 to-orange-600",
   },
   {
     id: "oldpop",
     name: "올드팝",
-    emoji: "🌍",
     queries: ["올드팝 명곡 모음", "80s 90s pop hits", "추억의 팝송 메들리"],
-    gradient: "from-emerald-500 to-teal-600",
   },
   {
     id: "latest",
     name: "최신 가요",
-    emoji: "🔥",
     queries: ["최신 가요 인기차트 2025", "2025 인기곡 모음", "신곡 모음 플레이리스트"],
-    gradient: "from-red-500 to-rose-600",
   },
   {
     id: "classic",
     name: "클래식",
-    emoji: "🎻",
     queries: ["클래식 명곡 모음", "편안한 클래식 피아노", "클래식 음악 연주"],
-    gradient: "from-violet-500 to-purple-600",
   },
   {
     id: "jazz",
     name: "재즈",
-    emoji: "🎷",
     queries: ["재즈 명곡 카페", "보사노바 재즈", "smooth jazz playlist"],
-    gradient: "from-yellow-500 to-amber-600",
   },
   {
     id: "ccm",
     name: "CCM/찬송가",
-    emoji: "✝️",
     queries: ["CCM 모음 은혜", "찬송가 연주 모음", "은혜로운 찬양 모음"],
-    gradient: "from-sky-500 to-blue-600",
   },
 ];
 
@@ -78,7 +60,6 @@ export interface RadioState {
   active: boolean;
   genreId: string | null;
   genreName: string | null;
-  genreEmoji: string | null;
   loadedCount: number;
   isLoadingMore: boolean;
 }
@@ -105,7 +86,6 @@ export function useRadioMode(
     active: false,
     genreId: null,
     genreName: null,
-    genreEmoji: null,
     loadedCount: 0,
     isLoadingMore: false,
   });
@@ -189,7 +169,6 @@ export function useRadioMode(
         active: true,
         genreId: genre.id,
         genreName: genre.name,
-        genreEmoji: genre.emoji,
         loadedCount: 0,
         isLoadingMore: true,
       });
@@ -230,7 +209,6 @@ export function useRadioMode(
       active: false,
       genreId: null,
       genreName: null,
-      genreEmoji: null,
       loadedCount: 0,
       isLoadingMore: false,
     });
