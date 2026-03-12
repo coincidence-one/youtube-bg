@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Headphones, Shuffle, Repeat, Repeat1, Mic2, Search, LogIn } from "lucide-react";
+import { Shuffle, Repeat, Repeat1, Mic2, Search, LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -33,7 +33,6 @@ import { useRadioMode } from "@/hooks/useRadioMode";
 const PLAYER_ID = "yt-player";
 
 export default function Home() {
-  // SponsorBlock 진행률 콜백 ref
   const onProgressRef = useRef<((time: number) => void) | null>(null);
 
   const {
@@ -52,8 +51,6 @@ export default function Home() {
     setPlaybackRate,
     toggleVideoMode,
     addToQueue,
-    removeFromQueue,
-    clearQueue,
     addExternalTrack,
   } = useYouTubePlayer(PLAYER_ID, onProgressRef);
 
@@ -61,19 +58,16 @@ export default function Home() {
   const [showLyrics, setShowLyrics] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
 
-  // 사용자 동기화 (다른 훅보다 먼저 선언)
   const userSync = useUserSync();
 
-  // 라디오 모드
   const { radioState, startRadio, stopRadio, checkAndLoadMore } = useRadioMode(
     addExternalTrack,
     toggleShuffle,
     state.shuffle
   );
-
   const [radioLoadingGenre, setRadioLoadingGenre] = useState<string | null>(null);
 
-  // localStorage에서 마지막 재생목록 자동 복원 (로그인 필수)
+  // 마지막 재생목록 자동 복원 (로그인 필수)
   useEffect(() => {
     if (state.isReady && state.playlistId && !playlistLoaded && !userSync.isLoading && userSync.user) {
       loadPlaylist(state.playlistId);
@@ -84,63 +78,44 @@ export default function Home() {
 
   // 라디오: 곡이 끝에 가까워지면 자동 추가 로드
   useEffect(() => {
-    if (radioState.active) {
-      checkAndLoadMore(state.currentIndex, state.playlist.length);
-    }
+    if (radioState.active) checkAndLoadMore(state.currentIndex, state.playlist.length);
   }, [radioState.active, state.currentIndex, state.playlist.length, checkAndLoadMore]);
 
-  const handleLoadPlaylist = (playlistId: string) => {
+  const handleLoadPlaylist = useCallback((playlistId: string) => {
     loadPlaylist(playlistId);
     setPlaylistLoaded(true);
     setShowSearch(false);
-    // 재생목록 로드 시 라디오 모드 해제
     if (radioState.active) stopRadio();
-  };
+  }, [loadPlaylist, radioState.active, stopRadio]);
 
-  // 외부 트랙 추가 (검색에서)
   const handleAddExternalTrack = useCallback(
-    (
-      videoId: string,
-      meta: { title: string; duration?: number; uploader?: string },
-      playNow?: boolean
-    ) => {
+    (videoId: string, meta: { title: string; duration?: number; uploader?: string }, playNow?: boolean) => {
       addExternalTrack(videoId, meta, playNow);
       if (playNow) setPlaylistLoaded(true);
     },
     [addExternalTrack]
   );
 
-  // 장르 라디오 시작
-  const handleStartRadio = useCallback(
-    async (genreId: string) => {
-      setRadioLoadingGenre(genreId);
-      await startRadio(genreId);
-      setPlaylistLoaded(true);
-      setRadioLoadingGenre(null);
-    },
-    [startRadio]
-  );
+  // 라디오 시작 (로그인 불필요)
+  const handleStartRadio = useCallback(async (genreId: string) => {
+    setRadioLoadingGenre(genreId);
+    await startRadio(genreId);
+    setPlaylistLoaded(true);
+    setRadioLoadingGenre(null);
+  }, [startRadio]);
 
-  // 슬립 타이머
   const { timerState, setTimer } = useSleepTimer(pause);
-
-  // SponsorBlock
   const sponsorBlock = useSponsorBlock(state.currentTrack?.videoId ?? null);
 
-  // SponsorBlock 자동 스킵 콜백
   useEffect(() => {
     onProgressRef.current = (currentTime: number) => {
       const skipTo = sponsorBlock.checkSegment(currentTime);
-      if (skipTo !== null) {
-        seekTo(skipTo);
-      }
+      if (skipTo !== null) seekTo(skipTo);
     };
   }, [sponsorBlock.checkSegment, seekTo]);
 
-  // Return YouTube Dislike
   const votes = useVideoVotes(state.currentTrack?.videoId ?? null);
 
-  // 설정 변경 시 클라우드 동기화
   useEffect(() => {
     userSync.syncPreferences({
       volume: state.volume,
@@ -156,48 +131,20 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sponsorBlock.enabled]);
 
-  // 키보드 단축키
-  const handleVolumeUp = useCallback(() => {
-    setVolume(Math.min(100, state.volume + 5));
-  }, [setVolume, state.volume]);
-
-  const handleVolumeDown = useCallback(() => {
-    setVolume(Math.max(0, state.volume - 5));
-  }, [setVolume, state.volume]);
-
-  const handleSeekForward = useCallback(() => {
-    seekTo(Math.min(state.duration, state.currentTime + 5));
-  }, [seekTo, state.duration, state.currentTime]);
-
-  const handleSeekBackward = useCallback(() => {
-    seekTo(Math.max(0, state.currentTime - 5));
-  }, [seekTo, state.currentTime]);
-
-  const handleToggleLyrics = useCallback(() => {
-    setShowLyrics((prev) => !prev);
-  }, []);
-
-  const handleToggleSearch = useCallback(() => {
-    setShowSearch((prev) => !prev);
-  }, []);
-
-  const handleToggleSponsorBlock = useCallback(() => {
-    sponsorBlock.toggleEnabled();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sponsorBlock.toggleEnabled]);
+  const handleVolumeUp = useCallback(() => setVolume(Math.min(100, state.volume + 5)), [setVolume, state.volume]);
+  const handleVolumeDown = useCallback(() => setVolume(Math.max(0, state.volume - 5)), [setVolume, state.volume]);
+  const handleSeekForward = useCallback(() => seekTo(Math.min(state.duration, state.currentTime + 5)), [seekTo, state.duration, state.currentTime]);
+  const handleSeekBackward = useCallback(() => seekTo(Math.max(0, state.currentTime - 5)), [seekTo, state.currentTime]);
+  const handleToggleLyrics = useCallback(() => setShowLyrics((p) => !p), []);
+  const handleToggleSearch = useCallback(() => setShowSearch((p) => !p), []);
+  const handleToggleSponsorBlock = useCallback(() => sponsorBlock.toggleEnabled(), [sponsorBlock.toggleEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useKeyboardShortcuts({
-    onTogglePlay: togglePlay,
-    onNext: next,
-    onPrevious: previous,
-    onVolumeUp: handleVolumeUp,
-    onVolumeDown: handleVolumeDown,
-    onToggleMute: toggleMute,
-    onSeekForward: handleSeekForward,
-    onSeekBackward: handleSeekBackward,
-    onToggleVideoMode: toggleVideoMode,
-    onToggleLyrics: handleToggleLyrics,
-    onToggleSearch: handleToggleSearch,
+    onTogglePlay: togglePlay, onNext: next, onPrevious: previous,
+    onVolumeUp: handleVolumeUp, onVolumeDown: handleVolumeDown,
+    onToggleMute: toggleMute, onSeekForward: handleSeekForward,
+    onSeekBackward: handleSeekBackward, onToggleVideoMode: toggleVideoMode,
+    onToggleLyrics: handleToggleLyrics, onToggleSearch: handleToggleSearch,
     onToggleSponsorBlock: handleToggleSponsorBlock,
     hasTrack: state.currentTrack !== null,
   });
@@ -206,23 +153,26 @@ export default function Home() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      {/* 헤더 */}
-      <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur-md supports-backdrop-filter:bg-background/80">
-        <div className="mx-auto max-w-screen-2xl flex items-center justify-between px-4 h-14">
-          <div className="flex items-center gap-2">
-            <Headphones className="size-5 text-primary" />
-            <h1 className="font-semibold text-lg">YouTube BG</h1>
+      {/* ── 헤더 ── */}
+      <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur-sm">
+        <div className="mx-auto max-w-screen-xl flex items-center justify-between px-4 h-14">
+          {/* 로고 */}
+          <div className="flex items-center gap-2 select-none">
+            <span className="text-lg font-semibold tracking-tight">YT BG</span>
           </div>
+
+          {/* 우측 액션 */}
           <div className="flex items-center gap-1">
             <Button
               variant="ghost"
               size="icon"
-              className={`size-8 ${showSearch ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+              className={`size-8 ${showSearch ? "text-foreground" : "text-muted-foreground"}`}
               onClick={() => userSync.user ? handleToggleSearch() : userSync.signIn()}
               title="검색 (S)"
             >
               <Search className="size-4" />
             </Button>
+
             {playlistLoaded && (
               <>
                 <FavoritePlaylists
@@ -256,6 +206,7 @@ export default function Home() {
                 />
               </>
             )}
+
             <UserMenu
               user={userSync.user}
               isLoading={userSync.isLoading}
@@ -267,91 +218,101 @@ export default function Home() {
         </div>
       </header>
 
-      {/* 메인 콘텐츠 */}
-      <main className="flex-1 mx-auto max-w-screen-2xl w-full px-4 py-6 pb-28 md:pb-32">
-        {/* YouTube 플레이어 - 항상 DOM에 존재, videoMode일 때만 보임 */}
+      {/* ── 메인 ── */}
+      <main className="flex-1 mx-auto max-w-screen-xl w-full px-4 py-8 pb-28 md:pb-32">
         <Player id={PLAYER_ID} videoMode={isVideoVisible} />
 
         {showSearch ? (
-          /* 검색 화면 */
-          <SearchView onLoadPlaylist={handleLoadPlaylist} onAddTrack={handleAddExternalTrack} onClose={() => setShowSearch(false)} />
+          <SearchView
+            onLoadPlaylist={handleLoadPlaylist}
+            onAddTrack={handleAddExternalTrack}
+            onClose={() => setShowSearch(false)}
+          />
+
         ) : !playlistLoaded ? (
-          /* 초기 화면 */
-          <div className="flex flex-col items-center justify-center min-h-[60vh] gap-8">
-            <div className="text-center space-y-3">
-              <div className="inline-flex items-center justify-center size-20 rounded-full bg-primary/10 mb-4">
-                <Headphones className="size-10 text-primary" />
-              </div>
-              <h2 className="text-2xl md:text-3xl font-bold">YouTube BG Player</h2>
-              <p className="text-muted-foreground max-w-md">
-                장르를 선택하거나 재생목록 URL을 입력하면 백그라운드에서 음악을 들을 수 있습니다.
+          /* ── 초기 화면 ── */
+          <div className="flex flex-col items-center justify-center min-h-[70vh] gap-10">
+            {/* 히어로 */}
+            <div className="text-center space-y-3 max-w-md">
+              <p className="text-xs font-semibold uppercase tracking-widest text-primary">라디오 플레이어</p>
+              <h2 className="text-3xl font-bold tracking-tight">원하는 장르를 선택하세요</h2>
+              <p className="text-sm text-muted-foreground">
+                탭을 전환해도 음악이 계속 재생됩니다
               </p>
             </div>
 
-            {userSync.isLoading ? null : userSync.user ? (
-              <div className="w-full max-w-2xl space-y-8">
-                {/* 장르 라디오 카드 (메인) */}
+            {/* 장르 카드 — 비로그인도 사용 가능 */}
+            {!userSync.isLoading && (
+              <div className="w-full max-w-2xl space-y-6">
                 <GenreCards
                   onSelectGenre={handleStartRadio}
                   loadingGenreId={radioLoadingGenre}
                 />
 
-                {/* 구분선 */}
-                <div className="flex items-center gap-4">
-                  <div className="flex-1 border-t" />
-                  <span className="text-xs text-muted-foreground">또는 재생목록 URL 입력</span>
-                  <div className="flex-1 border-t" />
-                </div>
+                {/* 로그인 사용자: 재생목록 URL 입력 */}
+                {userSync.user && (
+                  <>
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 border-t" />
+                      <span className="text-xs text-muted-foreground">또는 재생목록 URL 입력</span>
+                      <div className="flex-1 border-t" />
+                    </div>
+                    <PlaylistInput onLoadPlaylist={handleLoadPlaylist} isLoading={state.isLoading} />
+                  </>
+                )}
 
-                {/* 재생목록 입력 (보조) */}
-                <PlaylistInput onLoadPlaylist={handleLoadPlaylist} isLoading={state.isLoading} />
-              </div>
-            ) : (
-              <div className="flex flex-col items-center gap-4">
-                <Button
-                  size="lg"
-                  className="gap-2"
-                  onClick={userSync.signIn}
-                >
-                  <LogIn className="size-4" />
-                  Google로 로그인
-                </Button>
-                <p className="text-xs text-muted-foreground">
-                  로그인하면 재생목록, 즐겨찾기가 클라우드에 동기화됩니다
-                </p>
+                {/* 비로그인: 하단 로그인 유도 (작게) */}
+                {!userSync.user && (
+                  <p className="text-center text-xs text-muted-foreground pt-2">
+                    <button
+                      onClick={userSync.signIn}
+                      className="inline-flex items-center gap-1 text-foreground hover:underline font-medium"
+                    >
+                      <LogIn className="size-3" />
+                      로그인
+                    </button>
+                    {" "}하면 즐겨찾기와 재생목록 URL 입력이 가능합니다
+                  </p>
+                )}
               </div>
             )}
           </div>
+
         ) : (
-          /* 재생 화면 */
-          <div className="space-y-6">
+          /* ── 재생 화면 ── */
+          <div className="space-y-4">
             {/* 라디오 배너 */}
             <RadioBanner radioState={radioState} onStop={stopRadio} />
 
-            {/* 상단: URL 입력 (축소 버전, 모바일에서는 검색으로 대체) */}
-            <div className="hidden md:block">
-              <PlaylistInput onLoadPlaylist={handleLoadPlaylist} isLoading={state.isLoading} />
-            </div>
+            {/* URL 입력 (데스크탑, 로그인 시만) */}
+            {userSync.user && (
+              <div className="hidden md:block">
+                <PlaylistInput onLoadPlaylist={handleLoadPlaylist} isLoading={state.isLoading} />
+              </div>
+            )}
 
-            {/* 현재 재생 중인 곡 정보 (모바일/태블릿) */}
+            {/* 모바일 현재 곡 카드 */}
             {state.currentTrack && (
               <Card className="md:hidden">
-                <CardContent className="p-4">
+                <CardContent className="p-5">
                   <div className="flex flex-col items-center gap-4">
-                    {/* 노래 모드일 때만 썸네일 표시 */}
                     {!state.videoMode && (
                       <img
                         src={state.currentTrack.thumbnail}
                         alt={state.currentTrack.title}
-                        className="w-full max-w-xs aspect-video rounded-lg object-cover"
+                        className="w-full max-w-[240px] aspect-video rounded-lg object-cover"
                       />
                     )}
-                    <div className="text-center w-full">
-                      <h3 className="text-lg font-bold truncate">{state.currentTrack.title}</h3>
-                      <p className="text-base text-muted-foreground truncate">{state.currentTrack.author}</p>
+
+                    <div className="text-center w-full space-y-0.5">
+                      <h3 className="text-base font-semibold leading-tight line-clamp-2">
+                        {state.currentTrack.title}
+                      </h3>
+                      <p className="text-sm text-muted-foreground truncate">
+                        {state.currentTrack.author}
+                      </p>
                     </div>
 
-                    {/* 모바일 전용 프로그레스바 */}
                     <ProgressBar
                       currentTime={state.currentTime}
                       duration={state.duration}
@@ -359,48 +320,35 @@ export default function Home() {
                       segments={sponsorBlock.enabled ? sponsorBlock.segments : undefined}
                     />
 
-                    {/* 모바일 전용 추가 컨트롤 (큰 버튼) */}
-                    <div className="flex items-center justify-center gap-4">
+                    <div className="flex items-center justify-center gap-3">
                       <Button
-                        variant="ghost"
-                        size="icon"
-                        className={`size-10 ${state.shuffle ? "text-primary" : "text-muted-foreground"}`}
+                        variant="ghost" size="icon"
+                        className={`size-9 ${state.shuffle ? "text-primary" : "text-muted-foreground"}`}
                         onClick={toggleShuffle}
                       >
-                        <Shuffle className="size-5" />
+                        <Shuffle className="size-4" />
                       </Button>
                       <VolumeControl
-                        volume={state.volume}
-                        isMuted={state.isMuted}
-                        onVolumeChange={setVolume}
-                        onToggleMute={toggleMute}
+                        volume={state.volume} isMuted={state.isMuted}
+                        onVolumeChange={setVolume} onToggleMute={toggleMute}
                       />
                       <Button
-                        variant="ghost"
-                        size="icon"
-                        className={`size-10 ${state.repeat !== "off" ? "text-primary" : "text-muted-foreground"}`}
+                        variant="ghost" size="icon"
+                        className={`size-9 ${state.repeat !== "off" ? "text-primary" : "text-muted-foreground"}`}
                         onClick={cycleRepeat}
                       >
-                        {state.repeat === "one" ? (
-                          <Repeat1 className="size-5" />
-                        ) : (
-                          <Repeat className="size-5" />
-                        )}
+                        {state.repeat === "one" ? <Repeat1 className="size-4" /> : <Repeat className="size-4" />}
                       </Button>
-                      {/* 가사 토글 (모바일) */}
                       <Button
-                        variant="ghost"
-                        size="icon"
-                        className={`size-10 ${showLyrics ? "text-primary" : "text-muted-foreground"}`}
+                        variant="ghost" size="icon"
+                        className={`size-9 ${showLyrics ? "text-primary" : "text-muted-foreground"}`}
                         onClick={() => setShowLyrics(!showLyrics)}
-                        title="가사"
                       >
-                        <Mic2 className="size-5" />
+                        <Mic2 className="size-4" />
                       </Button>
                     </div>
 
-                    {/* 가사 표시 (모바일) */}
-                    {showLyrics && state.currentTrack && (
+                    {showLyrics && (
                       <div className="w-full h-[200px] border rounded-lg overflow-hidden">
                         <LyricsView
                           title={state.currentTrack.title}
@@ -414,34 +362,36 @@ export default function Home() {
               </Card>
             )}
 
-            {/* 데스크탑: 현재 곡 + 가사 + 재생목록 */}
-            <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
-              {/* 현재 재생 중인 곡 (데스크탑) */}
+            {/* 데스크탑 레이아웃 */}
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
+              {/* 현재 곡 (데스크탑) */}
               {state.currentTrack && (
                 <Card className="hidden md:block">
                   <CardContent className="p-6 space-y-5">
-                    <div className={state.videoMode ? "" : "flex gap-6"}>
-                      {/* 노래 모드일 때만 썸네일 표시 */}
+                    <div className={state.videoMode ? "" : "flex gap-5"}>
                       {!state.videoMode && (
                         <img
                           src={state.currentTrack.thumbnail}
                           alt={state.currentTrack.title}
-                          className="w-48 lg:w-64 aspect-video rounded-lg object-cover shrink-0"
+                          className="w-44 lg:w-56 aspect-video rounded-lg object-cover shrink-0"
                         />
                       )}
-                      <div className="min-w-0 flex-1 flex flex-col justify-center">
-                        <h3 className="text-xl font-semibold truncate">{state.currentTrack.title}</h3>
-                        <p className="text-muted-foreground truncate mt-1">{state.currentTrack.author}</p>
-                        <p className="text-xs text-muted-foreground mt-3">
-                          곡 {state.currentIndex + 1} / {state.playlist.length}
+                      <div className="min-w-0 flex-1 flex flex-col justify-center gap-1">
+                        <h3 className="text-xl font-semibold leading-tight line-clamp-2">
+                          {state.currentTrack.title}
+                        </h3>
+                        <p className="text-sm text-muted-foreground truncate">
+                          {state.currentTrack.author}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {state.currentIndex + 1} / {state.playlist.length}
                           {state.queue.length > 0 && (
-                            <span className="ml-2 text-primary">큐: {state.queue.length}곡</span>
+                            <span className="ml-2 text-primary">· 큐 {state.queue.length}곡</span>
                           )}
                         </p>
                       </div>
                     </div>
 
-                    {/* 프로그레스바 */}
                     <ProgressBar
                       currentTime={state.currentTime}
                       duration={state.duration}
@@ -449,7 +399,6 @@ export default function Home() {
                       segments={sponsorBlock.enabled ? sponsorBlock.segments : undefined}
                     />
 
-                    {/* 컨트롤 */}
                     <div className="flex items-center justify-center gap-2">
                       <PlayerControls
                         isPlaying={state.isPlaying}
@@ -462,10 +411,8 @@ export default function Home() {
                         onToggleShuffle={toggleShuffle}
                         onCycleRepeat={cycleRepeat}
                       />
-                      {/* 가사 토글 (데스크탑) */}
                       <Button
-                        variant="ghost"
-                        size="icon"
+                        variant="ghost" size="icon"
                         className={`size-9 ${showLyrics ? "text-primary" : "text-muted-foreground"}`}
                         onClick={() => setShowLyrics(!showLyrics)}
                         title="가사"
@@ -477,15 +424,15 @@ export default function Home() {
                 </Card>
               )}
 
-              {/* 가사 패널 (데스크탑) */}
+              {/* 가사 (데스크탑) */}
               {showLyrics && state.currentTrack && (
                 <Card className="hidden md:block">
                   <CardContent className="p-4">
-                    <h3 className="font-semibold text-sm text-muted-foreground mb-2 flex items-center gap-1.5">
+                    <p className="text-xs font-medium text-muted-foreground mb-3 flex items-center gap-1.5">
                       <Mic2 className="size-3.5" />
                       가사
-                    </h3>
-                    <div className="h-[250px]">
+                    </p>
+                    <div className="h-[240px]">
                       <LyricsView
                         title={state.currentTrack.title}
                         artist={state.currentTrack.author}
@@ -499,10 +446,10 @@ export default function Home() {
               {/* 재생목록 */}
               <Card className={`lg:row-start-1 lg:col-start-2 ${showLyrics && state.currentTrack ? "lg:row-span-3" : "lg:row-span-2"}`}>
                 <CardContent className="p-4">
-                  <h3 className="font-semibold text-sm text-muted-foreground mb-3">
-                    재생목록 ({state.playlist.length}곡)
-                  </h3>
-                  <div className="h-[300px] lg:h-[500px]">
+                  <p className="text-xs font-medium text-muted-foreground mb-3">
+                    재생목록 · {state.playlist.length}곡
+                  </p>
+                  <div className="h-[300px] lg:h-[480px]">
                     <PlaylistView
                       playlist={state.playlist}
                       currentIndex={state.currentIndex}
@@ -521,16 +468,13 @@ export default function Home() {
         )}
       </main>
 
-      {/* SponsorBlock 스킵 알림 */}
       <SponsorSkipNotification
         category={sponsorBlock.lastSkippedCategory}
         onDismiss={sponsorBlock.clearNotification}
       />
 
-      {/* PWA 설치 유도 */}
       <InstallPrompt />
 
-      {/* 하단 고정 플레이어 바 */}
       {playlistLoaded && (
         <PlayerBar
           state={state}
