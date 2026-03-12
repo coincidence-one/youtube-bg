@@ -445,11 +445,11 @@ export default function Home() {
 
               {/* 재생목록 */}
               <Card className={`lg:row-start-1 lg:col-start-2 ${showLyrics && state.currentTrack ? "lg:row-span-3" : "lg:row-span-2"}`}>
-                <CardContent className="p-4">
-                  <p className="text-xs font-medium text-muted-foreground mb-3">
+                <CardContent className="p-4 flex flex-col h-full">
+                  <p className="text-xs font-medium text-muted-foreground mb-3 shrink-0">
                     재생목록 · {state.playlist.length}곡
                   </p>
-                  <div className="h-[300px] lg:h-[480px]">
+                  <div className="flex-1 min-h-0">
                     <PlaylistView
                       playlist={state.playlist}
                       currentIndex={state.currentIndex}

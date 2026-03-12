@@ -138,7 +138,7 @@ export function PlaylistView({
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0">
       {/* 검색 바 */}
       <div className="relative mb-2 shrink-0">
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
